@@ -54,16 +54,20 @@ impl Board {
         }
     }
 
+    pub fn new_test() -> Board {
+        let mut board = Board::new();
+        board.queens[COLOR_WHITE] = 0x0000000000000002;
+        board.pawns[COLOR_BLACK] = 0x0000000000000100;
+        board.active_color = COLOR_BLACK;
+        board
+    }
+
     pub fn next_boards(&self) -> Vec<Board> {
         let mut output = vec![];
 
         self.push_pawn_moves(&mut output);
 
         output
-    }
-
-    fn clone_next_move(&self) -> Board {
-        self.apply_move(|_| {})
     }
 
     fn apply_move<F>(&self, f: F) -> Board
@@ -85,6 +89,18 @@ impl Board {
 
     fn rank_file_from_index(index: u32) -> (u32, u32) {
         (8 - (index / 8), (index % 8 + 1))
+    }
+
+    fn index_from_rank_file(rank: u32, file: u32) -> u32 {
+        (8 - rank) * 8 + file - 1
+    }
+
+    fn opponent_color(color: usize) -> usize {
+        if color == COLOR_WHITE {
+            COLOR_BLACK
+        } else {
+            COLOR_WHITE
+        }
     }
 
     fn push_pawn_moves(&self, output: &mut Vec<Board>) {
@@ -133,9 +149,71 @@ impl Board {
                     }));
                 }
             }
-            // TODO capture
-            // TODO en passant capture
-            // TODO capture with promotion
+            let opponent_occupancy =
+                self.occupancy_bits_for(Self::opponent_color(self.active_color));
+            if file > 1 {
+                let capture_left_index = move_1_index - 1;
+                if opponent_occupancy.bit_at_index(capture_left_index) {
+                    self.push_pawn_captures(index, capture_left_index, output);
+                }
+                if self.en_passant_square == Some(capture_left_index) {
+                    self.push_pawn_captures(index, capture_left_index, output);
+                }
+            }
+            if file < 8 {
+                let capture_right_index = move_1_index - 1;
+                if opponent_occupancy.bit_at_index(capture_right_index) {
+                    self.push_pawn_captures(index, capture_right_index, output);
+                }
+                if self.en_passant_square == Some(capture_right_index) {
+                    self.push_pawn_captures(index, capture_right_index, output);
+                }
+            }
+        }
+    }
+
+    fn push_pawn_captures(&self, from_index: u32, to_index: u32, output: &mut Vec<Board>) {
+        let opponent_color = Self::opponent_color(self.active_color);
+
+        let (to_rank, _) = Self::rank_file_from_index(to_index);
+
+        let clear_square = |b: &mut Board| {
+            b.rooks[opponent_color].set_bit(to_index, false);
+            b.knights[opponent_color].set_bit(to_index, false);
+            b.bishops[opponent_color].set_bit(to_index, false);
+            b.queens[opponent_color].set_bit(to_index, false);
+            b.king[opponent_color].set_bit(to_index, false);
+        };
+
+        if to_rank == 1 || to_rank == 8 {
+            // This is a capture with promotion.
+            output.push(self.apply_move(|b| {
+                b.pawns[self.active_color].set_bit(from_index, false);
+                b.rooks[self.active_color].set_bit(to_index, true);
+                clear_square(b);
+            }));
+            output.push(self.apply_move(|b| {
+                b.pawns[self.active_color].set_bit(from_index, false);
+                b.bishops[self.active_color].set_bit(to_index, true);
+                clear_square(b);
+            }));
+            output.push(self.apply_move(|b| {
+                b.pawns[self.active_color].set_bit(from_index, false);
+                b.knights[self.active_color].set_bit(to_index, true);
+                clear_square(b);
+            }));
+            output.push(self.apply_move(|b| {
+                b.pawns[self.active_color].set_bit(from_index, false);
+                b.queens[self.active_color].set_bit(to_index, true);
+                clear_square(b);
+            }));
+        } else {
+            // This is a normal capture.
+            output.push(self.apply_move(|b| {
+                b.pawns[self.active_color].set_bit(from_index, false);
+                b.pawns[self.active_color].set_bit(to_index, true);
+                clear_square(b);
+            }));
         }
     }
 
@@ -178,16 +256,9 @@ impl Board {
             .map(|rank| {
                 let mut output = String::with_capacity(8);
 
-                let pawns = self.pawns.map(|p| Self::rank_byte(p, rank));
-                let rooks = self.rooks.map(|p| Self::rank_byte(p, rank));
-                let knights = self.knights.map(|p| Self::rank_byte(p, rank));
-                let bishops = self.bishops.map(|p| Self::rank_byte(p, rank));
-                let queens = self.queens.map(|p| Self::rank_byte(p, rank));
-                let king = self.king.map(|p| Self::rank_byte(p, rank));
-                let occupancy = Self::rank_byte(occupancy, rank);
+                let occupancy = (occupancy >> 8 * (rank - 1)) as u8;
                 let mut offset: u32 = 0;
                 while offset < 8 {
-                    let offset_mask = 128u8 >> offset;
                     let remaining_occupancy = occupancy << offset;
                     let empty_squares = remaining_occupancy.leading_zeros();
                     if empty_squares > 0 {
@@ -198,29 +269,31 @@ impl Board {
                         }
                         offset += empty_squares;
                     } else {
-                        if pawns[COLOR_BLACK] & offset_mask > 0 {
+                        let index = Self::index_from_rank_file(rank as u32, offset + 1);
+
+                        if self.pawns[COLOR_BLACK].bit_at_index(index) {
                             output.push('p');
-                        } else if pawns[COLOR_WHITE] & offset_mask > 0 {
+                        } else if self.pawns[COLOR_WHITE].bit_at_index(index) {
                             output.push('P');
-                        } else if rooks[COLOR_BLACK] & offset_mask > 0 {
+                        } else if self.rooks[COLOR_BLACK].bit_at_index(index) {
                             output.push('r');
-                        } else if rooks[COLOR_WHITE] & offset_mask > 0 {
+                        } else if self.rooks[COLOR_WHITE].bit_at_index(index) {
                             output.push('R');
-                        } else if knights[COLOR_BLACK] & offset_mask > 0 {
+                        } else if self.knights[COLOR_BLACK].bit_at_index(index) {
                             output.push('n');
-                        } else if knights[COLOR_WHITE] & offset_mask > 0 {
+                        } else if self.knights[COLOR_WHITE].bit_at_index(index) {
                             output.push('N');
-                        } else if bishops[COLOR_BLACK] & offset_mask > 0 {
+                        } else if self.bishops[COLOR_BLACK].bit_at_index(index) {
                             output.push('b');
-                        } else if bishops[COLOR_WHITE] & offset_mask > 0 {
+                        } else if self.bishops[COLOR_WHITE].bit_at_index(index) {
                             output.push('B');
-                        } else if queens[COLOR_BLACK] & offset_mask > 0 {
+                        } else if self.queens[COLOR_BLACK].bit_at_index(index) {
                             output.push('q');
-                        } else if queens[COLOR_WHITE] & offset_mask > 0 {
+                        } else if self.queens[COLOR_WHITE].bit_at_index(index) {
                             output.push('Q');
-                        } else if king[COLOR_BLACK] & offset_mask > 0 {
+                        } else if self.king[COLOR_BLACK].bit_at_index(index) {
                             output.push('k');
-                        } else if king[COLOR_WHITE] & offset_mask > 0 {
+                        } else if self.king[COLOR_WHITE].bit_at_index(index) {
                             output.push('K');
                         }
                         offset += 1;
@@ -269,12 +342,6 @@ impl Board {
         output.push_str(&self.fullmove_number.to_string());
 
         output
-    }
-
-    fn rank_byte(bits: u64, rank: usize) -> u8 {
-        debug_assert!(rank > 0, "rank == 0");
-        debug_assert!(rank <= 8, "rank > 8");
-        (bits >> 8 * (rank - 1)) as u8
     }
 
     fn coords_to_string(index: u32) -> String {
