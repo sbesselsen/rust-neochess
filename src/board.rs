@@ -82,7 +82,6 @@ impl Board {
                 let queens = self.queens.map(|p| Self::rank_byte(p, rank));
                 let king = self.king.map(|p| Self::rank_byte(p, rank));
                 let occupancy = Self::rank_byte(occupancy, rank);
-                println!("Occupancy {} {}", rank, occupancy);
                 let mut offset: u32 = 0;
                 while offset < 8 {
                     let offset_mask = 128u8 >> offset;
