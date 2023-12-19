@@ -67,8 +67,7 @@ impl Board {
 
     pub fn new_test() -> Board {
         let mut board = Board::new();
-        board.rooks[COLOR_WHITE] = 0x0000000000000400;
-        board.pawns[COLOR_BLACK] = 0x0000000000000400 << 8;
+        board.bishops[COLOR_WHITE] = 0x0000000000000040;
         board.active_color = COLOR_WHITE;
         board
     }
@@ -77,8 +76,9 @@ impl Board {
         let mut output = vec![];
 
         self.push_pawn_moves(&mut output);
-        self.push_knight_moves(&mut output);
         self.push_rook_moves(&mut output);
+        self.push_bishop_moves(&mut output);
+        self.push_knight_moves(&mut output);
 
         output
     }
@@ -209,6 +209,62 @@ impl Board {
             // Right
             for file_offset in 1..=(8 - file) {
                 if !rook_move(index, index + file_offset) {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn push_bishop_moves(&self, output: &mut Vec<Board>) {
+        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+        let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
+
+        let mut bishop_move = |index: u32, new_index: u32| -> bool {
+            if opponent_occupancy.bit_at_index(new_index) {
+                // Capture and then stop.
+                output.push(self.apply_move(|b| {
+                    b.bishops[self.active_color].set_bit(index, false);
+                    b.bishops[self.active_color].set_bit(new_index, true);
+                    b.clear_square(opponent_color, new_index);
+                }));
+                false
+            } else if occupancy.bit_at_index(new_index) {
+                // Occupied by my own piece; stop.
+                false
+            } else {
+                // Move.
+                output.push(self.apply_move(|b| {
+                    b.bishops[self.active_color].set_bit(index, false);
+                    b.bishops[self.active_color].set_bit(new_index, true);
+                }));
+                true // Further moves may exist in this direction
+            }
+        };
+
+        for index in self.bishops[self.active_color].into_bit_index_iter() {
+            let (rank, file) = Self::rank_file_from_index(index);
+            // Down right
+            for offset in 1..(rank.min(9 - file)) {
+                if !bishop_move(index, index + 9 * offset) {
+                    break;
+                }
+            }
+            // Down left
+            for offset in 1..(rank.min(file)) {
+                if !bishop_move(index, index + 7 * offset) {
+                    break;
+                }
+            }
+            // Up right
+            for offset in 1..((9 - rank).min(9 - file)) {
+                if !bishop_move(index, index - 7 * offset) {
+                    break;
+                }
+            }
+            // Up left
+            for offset in 1..((9 - rank).min(file)) {
+                if !bishop_move(index, index - 9 * offset) {
                     break;
                 }
             }
