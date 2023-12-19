@@ -53,19 +53,84 @@ impl Board {
         }
     }
 
+    pub fn next_boards(&self) -> Vec<Board> {
+        let mut output = vec![];
+
+        self.push_pawn_moves(&mut output);
+
+        output
+    }
+
+    fn clone_next_move(&self) -> Board {
+        self.apply_move(|_| {})
+    }
+
+    fn apply_move<F>(&self, f: F) -> Board
+    where
+        F: FnOnce(&mut Board),
+    {
+        let mut clone = self.clone();
+        f(&mut clone);
+        clone.halfmove_clock += 1;
+        if clone.active_color == COLOR_WHITE {
+            clone.active_color = COLOR_BLACK;
+        } else {
+            clone.active_color = COLOR_WHITE;
+            clone.fullmove_number += 1;
+        }
+        clone
+    }
+
+    fn push_pawn_moves(&self, output: &mut Vec<Board>) {
+        let pawns = self.pawns[self.active_color];
+        let occupancy = self.occupancy_bits();
+        let start_rank = match self.active_color {
+            COLOR_WHITE => 2,
+            _ => 7,
+        };
+        let move_offset: i32 = match self.active_color {
+            COLOR_WHITE => -8,
+            _ => 8,
+        };
+
+        for index in pawns.into_bit_index_iter() {
+            let rank = 8 - (index / 8);
+            let move_1_index: u32 = ((index as i32) + move_offset)
+                .try_into()
+                .expect("index should be on the board");
+            if !occupancy.bit_at_index(move_1_index) {
+                // Move 1 place forward.
+                output.push(self.apply_move(|b| {
+                    b.pawns[self.active_color].set_bit(index, false);
+                    b.pawns[self.active_color].set_bit(move_1_index, true);
+                }));
+            }
+            if rank == start_rank {
+                let move_2_index: u32 = ((index as i32) + 2 * move_offset)
+                    .try_into()
+                    .expect("index should be on the board");
+                if !occupancy.bit_at_index(move_2_index) {
+                    // Move 2 places forward.
+                    output.push(self.apply_move(|b| {
+                        b.pawns[self.active_color].set_bit(index, false);
+                        b.pawns[self.active_color].set_bit(move_2_index, true);
+                    }));
+                }
+            }
+        }
+    }
+
     fn occupancy_bits(&self) -> u64 {
-        self.pawns[0]
-            | self.pawns[1]
-            | self.rooks[0]
-            | self.rooks[1]
-            | self.knights[0]
-            | self.knights[1]
-            | self.bishops[0]
-            | self.bishops[1]
-            | self.queens[0]
-            | self.queens[1]
-            | self.king[0]
-            | self.king[1]
+        self.occupancy_bits_for(COLOR_WHITE) | self.occupancy_bits_for(COLOR_BLACK)
+    }
+
+    fn occupancy_bits_for(&self, color: usize) -> u64 {
+        self.pawns[color]
+            | self.rooks[color]
+            | self.knights[color]
+            | self.bishops[color]
+            | self.queens[color]
+            | self.king[color]
     }
 
     pub fn to_fen(&self) -> String {
@@ -85,9 +150,14 @@ impl Board {
                 let mut offset: u32 = 0;
                 while offset < 8 {
                     let offset_mask = 128u8 >> offset;
-                    let empty_squares = (occupancy << offset).leading_zeros();
+                    let remaining_occupancy = occupancy << offset;
+                    let empty_squares = remaining_occupancy.leading_zeros();
                     if empty_squares > 0 {
-                        output.push_str(&empty_squares.to_string());
+                        if remaining_occupancy == 0 {
+                            output.push_str(&(8 - offset).to_string());
+                        } else {
+                            output.push_str(&empty_squares.to_string());
+                        }
                         offset += empty_squares;
                     } else {
                         if pawns[COLOR_BLACK] & offset_mask > 0 {
@@ -186,5 +256,52 @@ impl Default for Board {
 impl Debug for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.to_fen())
+    }
+}
+
+struct BitIndexIterator {
+    n: u64,
+}
+
+impl Iterator for BitIndexIterator {
+    type Item = u32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.n == 0 {
+            None
+        } else {
+            let result = self.n.leading_zeros();
+            // Flip the first bit
+            self.n = self.n ^ (1u64 << (63 - result));
+            Some(result)
+        }
+    }
+}
+
+trait BitwiseHelper {
+    fn into_bit_index_iter(&self) -> BitIndexIterator;
+    fn bit_at_index(&self, index: u32) -> bool;
+    fn set_bit(&mut self, index: u32, value: bool);
+    fn with_bit(&self, index: u32, value: bool) -> Self;
+}
+
+impl BitwiseHelper for u64 {
+    fn into_bit_index_iter(&self) -> BitIndexIterator {
+        BitIndexIterator { n: *self }
+    }
+    fn bit_at_index(&self, index: u32) -> bool {
+        *self & (1u64 << (63 - index)) > 0
+    }
+    fn set_bit(&mut self, index: u32, value: bool) {
+        *self = if value {
+            *self | (1u64 << (63 - index))
+        } else {
+            *self & (u64::MAX ^ (1u64 << (63 - index)))
+        }
+    }
+    fn with_bit(&self, index: u32, value: bool) -> Self {
+        let mut result = self.clone();
+        result.set_bit(index, value);
+        result
     }
 }

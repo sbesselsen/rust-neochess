@@ -4,5 +4,8 @@ use board::Board;
 
 fn main() {
     let board = Board::new_setup();
-    println!("Board: {:?}", board);
+
+    for b in board.next_boards() {
+        println!("Board: {:?}", b);
+    }
 }
