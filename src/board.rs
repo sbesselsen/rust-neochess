@@ -67,9 +67,9 @@ impl Board {
 
     pub fn new_test() -> Board {
         let mut board = Board::new();
-        board.queens[COLOR_WHITE] = 0x0000000000000002;
-        board.pawns[COLOR_BLACK] = 0x0000000000000100;
-        board.active_color = COLOR_BLACK;
+        board.rooks[COLOR_WHITE] = 0x0000000000000400;
+        board.pawns[COLOR_BLACK] = 0x0000000000000400 << 8;
+        board.active_color = COLOR_WHITE;
         board
     }
 
@@ -78,6 +78,7 @@ impl Board {
 
         self.push_pawn_moves(&mut output);
         self.push_knight_moves(&mut output);
+        self.push_rook_moves(&mut output);
 
         output
     }
@@ -119,6 +120,7 @@ impl Board {
     }
 
     fn clear_square(&mut self, color: usize, index: u32) {
+        self.pawns[color].set_bit(index, false);
         self.rooks[color].set_bit(index, false);
         self.knights[color].set_bit(index, false);
         self.bishops[color].set_bit(index, false);
@@ -127,9 +129,9 @@ impl Board {
     }
 
     fn push_knight_moves(&self, output: &mut Vec<Board>) {
-        let occupancy = self.occupancy_bits();
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+        let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
 
         for index in self.knights[self.active_color].into_bit_index_iter() {
             let (rank, file) = Self::rank_file_from_index(index);
@@ -152,6 +154,62 @@ impl Board {
                             b.knights[self.active_color].set_bit(new_index, true);
                         }));
                     }
+                }
+            }
+        }
+    }
+
+    fn push_rook_moves(&self, output: &mut Vec<Board>) {
+        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+        let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
+
+        let mut rook_move = |index: u32, new_index: u32| -> bool {
+            if opponent_occupancy.bit_at_index(new_index) {
+                // Capture and then stop.
+                output.push(self.apply_move(|b| {
+                    b.rooks[self.active_color].set_bit(index, false);
+                    b.rooks[self.active_color].set_bit(new_index, true);
+                    b.clear_square(opponent_color, new_index);
+                }));
+                false
+            } else if occupancy.bit_at_index(new_index) {
+                // Occupied by my own piece; stop.
+                false
+            } else {
+                // Move.
+                output.push(self.apply_move(|b| {
+                    b.rooks[self.active_color].set_bit(index, false);
+                    b.rooks[self.active_color].set_bit(new_index, true);
+                }));
+                true // Further moves may exist in this direction
+            }
+        };
+
+        for index in self.rooks[self.active_color].into_bit_index_iter() {
+            let (rank, file) = Self::rank_file_from_index(index);
+            // Down
+            for rank_offset in 1..rank {
+                if !rook_move(index, index + 8 * rank_offset) {
+                    break;
+                }
+            }
+            // Up
+            for rank_offset in 1..=(8 - rank) {
+                if !rook_move(index, index - 8 * rank_offset) {
+                    break;
+                }
+            }
+            // Left
+            for file_offset in 1..file {
+                if !rook_move(index, index - file_offset) {
+                    break;
+                }
+            }
+            // Right
+            for file_offset in 1..=(8 - file) {
+                if !rook_move(index, index + file_offset) {
+                    break;
                 }
             }
         }
