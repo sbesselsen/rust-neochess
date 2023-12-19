@@ -8,6 +8,17 @@ pub const COLOR_BLACK: usize = 1;
 pub const SIDE_QUEEN: usize = 0;
 pub const SIDE_KING: usize = 1;
 
+const KNIGHT_MOVES: &'static [(i32, i32)] = &[
+    (2, -1),
+    (2, 1),
+    (1, -2),
+    (1, 2),
+    (-1, -2),
+    (-1, 2),
+    (-2, -1),
+    (-2, 1),
+];
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Board {
     // Board definition
@@ -66,6 +77,7 @@ impl Board {
         let mut output = vec![];
 
         self.push_pawn_moves(&mut output);
+        self.push_knight_moves(&mut output);
 
         output
     }
@@ -88,10 +100,13 @@ impl Board {
     }
 
     fn rank_file_from_index(index: u32) -> (u32, u32) {
+        debug_assert!(index < 64, "invalid square index");
         (8 - (index / 8), (index % 8 + 1))
     }
 
     fn index_from_rank_file(rank: u32, file: u32) -> u32 {
+        debug_assert!(rank > 0 && rank <= 8, "invalid rank");
+        debug_assert!(file > 0 && file <= 8, "invalid file");
         (8 - rank) * 8 + file - 1
     }
 
@@ -103,8 +118,46 @@ impl Board {
         }
     }
 
+    fn clear_square(&mut self, color: usize, index: u32) {
+        self.rooks[color].set_bit(index, false);
+        self.knights[color].set_bit(index, false);
+        self.bishops[color].set_bit(index, false);
+        self.queens[color].set_bit(index, false);
+        self.king[color].set_bit(index, false);
+    }
+
+    fn push_knight_moves(&self, output: &mut Vec<Board>) {
+        let occupancy = self.occupancy_bits();
+        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+
+        for index in self.knights[self.active_color].into_bit_index_iter() {
+            let (rank, file) = Self::rank_file_from_index(index);
+            for (rank_offset, file_offset) in KNIGHT_MOVES {
+                let new_rank = (rank as i32) + rank_offset;
+                let new_file = (file as i32) + file_offset;
+                if new_rank > 0 && new_rank <= 8 && new_file > 0 && new_file <= 8 {
+                    let new_index = Self::index_from_rank_file(new_rank as u32, new_file as u32);
+                    if opponent_occupancy.bit_at_index(new_index) {
+                        // Capture.
+                        output.push(self.apply_move(|b| {
+                            b.knights[self.active_color].set_bit(index, false);
+                            b.knights[self.active_color].set_bit(new_index, true);
+                            b.clear_square(opponent_color, new_index);
+                        }));
+                    } else if !occupancy.bit_at_index(new_index) {
+                        // Move.
+                        output.push(self.apply_move(|b| {
+                            b.knights[self.active_color].set_bit(index, false);
+                            b.knights[self.active_color].set_bit(new_index, true);
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
     fn push_pawn_moves(&self, output: &mut Vec<Board>) {
-        let pawns = self.pawns[self.active_color];
         let occupancy = self.occupancy_bits();
         let start_rank = match self.active_color {
             COLOR_WHITE => 2,
@@ -115,7 +168,7 @@ impl Board {
             _ => 8,
         };
 
-        for index in pawns.into_bit_index_iter() {
+        for index in self.pawns[self.active_color].into_bit_index_iter() {
             let (rank, file) = Self::rank_file_from_index(index);
 
             let move_1_index: u32 = ((index as i32) + move_offset)
@@ -177,42 +230,34 @@ impl Board {
 
         let (to_rank, _) = Self::rank_file_from_index(to_index);
 
-        let clear_square = |b: &mut Board| {
-            b.rooks[opponent_color].set_bit(to_index, false);
-            b.knights[opponent_color].set_bit(to_index, false);
-            b.bishops[opponent_color].set_bit(to_index, false);
-            b.queens[opponent_color].set_bit(to_index, false);
-            b.king[opponent_color].set_bit(to_index, false);
-        };
-
         if to_rank == 1 || to_rank == 8 {
             // This is a capture with promotion.
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.rooks[self.active_color].set_bit(to_index, true);
-                clear_square(b);
+                Self::clear_square(b, opponent_color, to_index);
             }));
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.bishops[self.active_color].set_bit(to_index, true);
-                clear_square(b);
+                Self::clear_square(b, opponent_color, to_index);
             }));
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.knights[self.active_color].set_bit(to_index, true);
-                clear_square(b);
+                Self::clear_square(b, opponent_color, to_index);
             }));
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.queens[self.active_color].set_bit(to_index, true);
-                clear_square(b);
+                Self::clear_square(b, opponent_color, to_index);
             }));
         } else {
             // This is a normal capture.
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.pawns[self.active_color].set_bit(to_index, true);
-                clear_square(b);
+                Self::clear_square(b, opponent_color, to_index);
             }));
         }
     }
@@ -345,10 +390,12 @@ impl Board {
     }
 
     fn coords_to_string(index: u32) -> String {
-        let file = index % 8;
-        let rank = 8 - (index / 8);
+        let file_index = index % 8;
+        let rank_index = 8 - (index / 8);
+        debug_assert!(rank_index < 8, "invalid rank_index");
+        debug_assert!(file_index < 8, "invalid file_index");
         let files = "abcdefgh";
-        files.chars().nth(file as usize).unwrap().to_string() + &rank.to_string()
+        files.chars().nth(file_index as usize).unwrap().to_string() + &rank_index.to_string()
     }
 }
 
