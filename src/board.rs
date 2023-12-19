@@ -1,3 +1,4 @@
+use crate::bitwise_helper::BitwiseHelper;
 use std::fmt::Debug;
 
 use itertools::Itertools;
@@ -18,7 +19,7 @@ pub struct Board {
     king: [u64; 2],
     can_castle: [[bool; 2]; 2],
     active_color: usize,
-    en_passant_square: Option<usize>,
+    en_passant_square: Option<u32>,
     halfmove_clock: u16,
     fullmove_number: u16,
 }
@@ -70,6 +71,7 @@ impl Board {
         F: FnOnce(&mut Board),
     {
         let mut clone = self.clone();
+        clone.en_passant_square = None;
         f(&mut clone);
         clone.halfmove_clock += 1;
         if clone.active_color == COLOR_WHITE {
@@ -79,6 +81,10 @@ impl Board {
             clone.fullmove_number += 1;
         }
         clone
+    }
+
+    fn rank_file_from_index(index: u32) -> (u32, u32) {
+        (8 - (index / 8), (index % 8 + 1))
     }
 
     fn push_pawn_moves(&self, output: &mut Vec<Board>) {
@@ -94,16 +100,25 @@ impl Board {
         };
 
         for index in pawns.into_bit_index_iter() {
-            let rank = 8 - (index / 8);
+            let (rank, file) = Self::rank_file_from_index(index);
+
             let move_1_index: u32 = ((index as i32) + move_offset)
                 .try_into()
                 .expect("index should be on the board");
             if !occupancy.bit_at_index(move_1_index) {
                 // Move 1 place forward.
-                output.push(self.apply_move(|b| {
-                    b.pawns[self.active_color].set_bit(index, false);
-                    b.pawns[self.active_color].set_bit(move_1_index, true);
-                }));
+                if (self.active_color == COLOR_WHITE && rank == 7)
+                    || (self.active_color == COLOR_BLACK && rank == 2)
+                {
+                    // Promote the pawn!
+                    self.push_pawn_promotions(index, move_1_index, output);
+                } else {
+                    // Just move forward.
+                    output.push(self.apply_move(|b| {
+                        b.pawns[self.active_color].set_bit(index, false);
+                        b.pawns[self.active_color].set_bit(move_1_index, true);
+                    }));
+                }
             }
             if rank == start_rank {
                 let move_2_index: u32 = ((index as i32) + 2 * move_offset)
@@ -114,10 +129,33 @@ impl Board {
                     output.push(self.apply_move(|b| {
                         b.pawns[self.active_color].set_bit(index, false);
                         b.pawns[self.active_color].set_bit(move_2_index, true);
+                        b.en_passant_square = Some(move_1_index);
                     }));
                 }
             }
+            // TODO capture
+            // TODO en passant capture
+            // TODO capture with promotion
         }
+    }
+
+    fn push_pawn_promotions(&self, from_index: u32, to_index: u32, output: &mut Vec<Board>) {
+        output.push(self.apply_move(|b| {
+            b.pawns[self.active_color].set_bit(from_index, false);
+            b.rooks[self.active_color].set_bit(to_index, true);
+        }));
+        output.push(self.apply_move(|b| {
+            b.pawns[self.active_color].set_bit(from_index, false);
+            b.bishops[self.active_color].set_bit(to_index, true);
+        }));
+        output.push(self.apply_move(|b| {
+            b.pawns[self.active_color].set_bit(from_index, false);
+            b.knights[self.active_color].set_bit(to_index, true);
+        }));
+        output.push(self.apply_move(|b| {
+            b.pawns[self.active_color].set_bit(from_index, false);
+            b.queens[self.active_color].set_bit(to_index, true);
+        }));
     }
 
     fn occupancy_bits(&self) -> u64 {
@@ -239,11 +277,11 @@ impl Board {
         (bits >> 8 * (rank - 1)) as u8
     }
 
-    fn coords_to_string(index: usize) -> String {
+    fn coords_to_string(index: u32) -> String {
         let file = index % 8;
         let rank = 8 - (index / 8);
         let files = "abcdefgh";
-        files.chars().nth(file).unwrap().to_string() + &rank.to_string()
+        files.chars().nth(file as usize).unwrap().to_string() + &rank.to_string()
     }
 }
 
@@ -256,52 +294,5 @@ impl Default for Board {
 impl Debug for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.to_fen())
-    }
-}
-
-struct BitIndexIterator {
-    n: u64,
-}
-
-impl Iterator for BitIndexIterator {
-    type Item = u32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.n == 0 {
-            None
-        } else {
-            let result = self.n.leading_zeros();
-            // Flip the first bit
-            self.n = self.n ^ (1u64 << (63 - result));
-            Some(result)
-        }
-    }
-}
-
-trait BitwiseHelper {
-    fn into_bit_index_iter(&self) -> BitIndexIterator;
-    fn bit_at_index(&self, index: u32) -> bool;
-    fn set_bit(&mut self, index: u32, value: bool);
-    fn with_bit(&self, index: u32, value: bool) -> Self;
-}
-
-impl BitwiseHelper for u64 {
-    fn into_bit_index_iter(&self) -> BitIndexIterator {
-        BitIndexIterator { n: *self }
-    }
-    fn bit_at_index(&self, index: u32) -> bool {
-        *self & (1u64 << (63 - index)) > 0
-    }
-    fn set_bit(&mut self, index: u32, value: bool) {
-        *self = if value {
-            *self | (1u64 << (63 - index))
-        } else {
-            *self & (u64::MAX ^ (1u64 << (63 - index)))
-        }
-    }
-    fn with_bit(&self, index: u32, value: bool) -> Self {
-        let mut result = self.clone();
-        result.set_bit(index, value);
-        result
     }
 }
