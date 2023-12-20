@@ -10,9 +10,11 @@ impl BitwiseHelper for u64 {
         BitIndexIterator { n: *self }
     }
     fn bit_at_index(&self, index: u32) -> bool {
+        debug_assert!(index < 64, "invalid index");
         *self & (1u64 << (63 - index)) > 0
     }
     fn set_bit(&mut self, index: u32, value: bool) {
+        debug_assert!(index < 64, "invalid index");
         *self = if value {
             *self | (1u64 << (63 - index))
         } else {
@@ -42,5 +44,43 @@ impl Iterator for BitIndexIterator {
             self.n = self.n ^ (1u64 << (63 - result));
             Some(result)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BitwiseHelper;
+
+    #[test]
+    fn it_sets_bits() {
+        let mut n: u64 = 1234;
+        n.set_bit(4, true);
+        let n_bit_4_toggled = n;
+
+        assert!(n % 2048 == 1234);
+        assert!(n > 1234);
+
+        n.set_bit(5, true);
+        assert!(n % 2048 == 1234);
+        assert!(n == n_bit_4_toggled + (1u64 << 58));
+
+        let n_bit_4_toggled_bit_5_untoggled = n.with_bit(5, false);
+        assert!(n_bit_4_toggled_bit_5_untoggled == n_bit_4_toggled);
+
+        let n_back_to_normal = n_bit_4_toggled_bit_5_untoggled.with_bit(4, false);
+        assert_eq!(n_back_to_normal, 1234);
+    }
+
+    #[test]
+    fn it_gets_bits() {
+        assert_eq!(129.bit_at_index(63), true);
+        assert_eq!(129.bit_at_index(56), true);
+        assert_eq!(129.bit_at_index(3), false);
+    }
+
+    #[test]
+    fn it_iterates_bits() {
+        let bits: Vec<u32> = (65572 as u64).into_bit_index_iter().collect();
+        assert_eq!(bits, vec![47, 58, 61]);
     }
 }
