@@ -80,6 +80,7 @@ impl Board {
         self.push_bishop_moves(&mut output);
         self.push_knight_moves(&mut output);
         self.push_queen_moves(&mut output);
+        self.push_king_moves(&mut output);
 
         output
     }
@@ -111,6 +112,7 @@ impl Board {
             clone.rooks[COLOR_BLACK] & 0x8000000000000000 > 0 && !black_king_moved;
         clone.can_castle[COLOR_BLACK][SIDE_KING] &=
             clone.rooks[COLOR_BLACK] & 0x0100000000000000 > 0 && !black_king_moved;
+
         clone
     }
 
@@ -489,6 +491,45 @@ impl Board {
             b.pawns[self.active_color].set_bit(from_index, false);
             b.queens[self.active_color].set_bit(to_index, true);
         }));
+    }
+
+    fn push_king_moves(&self, output: &mut Vec<Board>) {
+        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+        let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
+
+        for index in self.king[self.active_color].into_bit_index_iter() {
+            let (rank, file) = Self::rank_file_from_index(index);
+            for rank_offset in -1..=1 {
+                for file_offset in -1..=1 {
+                    if rank_offset == 0 && file_offset == 0 {
+                        continue;
+                    }
+                    let new_rank = (rank as i32) + rank_offset;
+                    let new_file = (file as i32) + file_offset;
+                    if new_rank > 0 && new_rank <= 8 && new_file > 0 && new_file <= 8 {
+                        let new_index =
+                            Self::index_from_rank_file(new_rank as u32, new_file as u32);
+                        if opponent_occupancy.bit_at_index(new_index) {
+                            // Capture.
+                            output.push(self.apply_move(|b| {
+                                b.king[self.active_color].set_bit(index, false);
+                                b.king[self.active_color].set_bit(new_index, true);
+                                b.clear_square(opponent_color, new_index);
+                            }));
+                        } else if !occupancy.bit_at_index(new_index) {
+                            // Move.
+                            output.push(self.apply_move(|b| {
+                                b.king[self.active_color].set_bit(index, false);
+                                b.king[self.active_color].set_bit(new_index, true);
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+
+        // TODO: castling!
     }
 
     fn occupancy_bits(&self) -> u64 {
