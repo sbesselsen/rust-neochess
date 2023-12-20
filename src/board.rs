@@ -1,8 +1,6 @@
 use crate::bitwise_helper::BitwiseHelper;
 use std::fmt::Debug;
 
-use itertools::Itertools;
-
 pub const COLOR_WHITE: usize = 0;
 pub const COLOR_BLACK: usize = 1;
 pub const SIDE_QUEEN: usize = 0;
@@ -680,11 +678,8 @@ impl Board {
 
     pub fn to_fen(&self) -> String {
         let occupancy = self.occupancy_bits();
-        let mut output = (1..=8)
-            .rev()
-            .map(|rank| {
-                let mut output = String::with_capacity(8);
-
+        let mut output = String::with_capacity(90);
+        for rank in (1..=8).rev() {
                 let occupancy = (occupancy >> 8 * (rank - 1)) as u8;
                 let mut offset: u32 = 0;
                 while offset < 8 {
@@ -705,10 +700,10 @@ impl Board {
                         offset += 1;
                     }
                 }
-
-                output
-            })
-            .join("/");
+            if rank > 1 {
+                output.push('/');
+            }
+        }
         output.push_str(if self.active_color == COLOR_WHITE {
             " w"
         } else {
@@ -751,7 +746,7 @@ impl Board {
     }
 
     pub fn to_readable_board(&self) -> String {
-        let mut output = String::with_capacity(230);
+        let mut output = String::with_capacity(270);
         output.push('\n');
 
         for rank in (1..=8).rev() {
