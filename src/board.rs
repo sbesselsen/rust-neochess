@@ -8,6 +8,10 @@ pub const COLOR_BLACK: usize = 1;
 pub const SIDE_QUEEN: usize = 0;
 pub const SIDE_KING: usize = 1;
 
+pub const ALL_MASK: u64 = 0xFFFFFFFFFFFFFFFF;
+pub const RANK_0_MASK: u64 = 0x00000000000000FF;
+pub const FILE_0_MASK: u64 = 0x8080808080808080;
+
 const KNIGHT_MOVES: &'static [(i32, i32)] = &[
     (2, -1),
     (2, 1),
@@ -67,19 +71,28 @@ impl Board {
 
     pub fn new_test() -> Board {
         let mut board = Board::new_setup();
-        board.bishops[COLOR_WHITE] = 0x0000000000000020;
-        board.knights[COLOR_WHITE] = 0x0000000000000040;
+        board.bishops[COLOR_WHITE] = 0x0000000000000000;
+        board.knights[COLOR_WHITE] = 0x0000000000000000;
+        board.queens[COLOR_WHITE] = 0x0000000000000000;
+        board.pawns[COLOR_WHITE] = 0;
+        board.king[COLOR_BLACK] = 0;
+        board.queens[COLOR_BLACK] = 0x4400000000000000;
+        board.bishops[COLOR_BLACK] = 0x0000000000000000;
+        board.knights[COLOR_BLACK] = 0x0000000000000000;
+        board.rooks[COLOR_BLACK] = 0x0000000000000000;
+        board.pawns[COLOR_BLACK] = 0;
+        board.king[COLOR_BLACK] = 0;
         board
     }
 
     pub fn next_boards(&self) -> Vec<Board> {
         let mut output = vec![];
 
-        self.push_pawn_moves(&mut output);
-        self.push_rook_moves(&mut output);
-        self.push_bishop_moves(&mut output);
-        self.push_knight_moves(&mut output);
-        self.push_queen_moves(&mut output);
+        // self.push_pawn_moves(&mut output);
+        // self.push_rook_moves(&mut output);
+        // self.push_bishop_moves(&mut output);
+        // self.push_knight_moves(&mut output);
+        // self.push_queen_moves(&mut output);
         self.push_king_moves(&mut output);
 
         output
@@ -529,8 +542,90 @@ impl Board {
             }
         }
 
-        let is_attacked = |index: u32| {
-            false // TODO
+        // This implementation is highly optimized to work only for castling, don't use it anywhere else.
+        // For example: we assume that squares_mask does not contain any squares on A or H file,
+        // because the king doesn't pass those when castline.
+        let any_squares_attacked = |squares_mask: u64| {
+            // Attacks by pawns
+            let unshifted_pawns_mask = (squares_mask << 1) | (squares_mask >> 1);
+            let pawns_mask = if self.active_color == COLOR_WHITE {
+                unshifted_pawns_mask << 8
+            } else {
+                unshifted_pawns_mask >> 8
+            };
+            if pawns_mask & self.pawns[opponent_color] > 0 {
+                // A pawn attacks some of the squares
+                return true;
+            }
+
+            // Attacks by king
+            let unshifted_king_mask = squares_mask | (squares_mask << 1) | (squares_mask >> 1);
+            let king_mask = if self.active_color == COLOR_WHITE {
+                unshifted_king_mask << 8
+            } else {
+                unshifted_king_mask >> 8
+            };
+            if king_mask & self.king[opponent_color] > 0 {
+                // The opponent's king attacks some of the squares.
+                return true;
+            }
+
+            let rank_index = if self.active_color == COLOR_WHITE {
+                7
+            } else {
+                0
+            };
+            let unshifted_files_mask = squares_mask << (rank_index * 8);
+            let files_mask = unshifted_files_mask
+                | (unshifted_files_mask >> 8)
+                | (unshifted_files_mask >> 16)
+                | (unshifted_files_mask >> 24)
+                | (unshifted_files_mask >> 32)
+                | (unshifted_files_mask >> 48)
+                | (unshifted_files_mask >> 56)
+                | (unshifted_files_mask >> 8)
+                | (unshifted_files_mask >> 16)
+                | (unshifted_files_mask >> 24)
+                | (unshifted_files_mask >> 32)
+                | (unshifted_files_mask >> 48)
+                | (unshifted_files_mask >> 56);
+
+            // Rooklike attacks.
+            // We only check vertical attacks because horizontal checks are ruled out by this point.
+            let rooklike_attackers =
+                (self.rooks[opponent_color] | self.queens[opponent_color]) & files_mask;
+            if rooklike_attackers > 0 {
+                // Some rooks are potentially on the right files.
+                for attacker_index in rooklike_attackers.into_bit_index_iter() {
+                    let (attacker_rank, attacker_file) = Self::rank_file_from_index(attacker_index);
+                    let attacker_file_mask = FILE_0_MASK >> (attacker_file - 1);
+
+                    // Find other pieces on this file (excluding the attackers and the king).
+                    let file_occupancy =
+                        (occupancy ^ rooklike_attackers ^ squares_mask) & attacker_file_mask;
+
+                    if file_occupancy == 0 {
+                        // There is nothing else on this file; the attacker can get to the square.
+                        return true;
+                    }
+
+                    let (king_rank, _) = Self::rank_file_from_index(squares_mask.leading_zeros());
+
+                    let min_rank = attacker_rank.min(king_rank);
+                    let max_rank = attacker_rank.max(king_rank);
+                    let between_mask =
+                        (ALL_MASK << (8 * min_rank)) & (ALL_MASK >> (8 * (9 - max_rank)));
+                    if file_occupancy & between_mask == 0 {
+                        // There are no pieces between the attacker and the target square.
+                        return true;
+                    }
+                }
+            }
+
+            // TODO: bishoplike attacks
+            // TODO: knight attacks
+
+            false
         };
 
         let rank_bit_offset = if self.active_color == COLOR_WHITE {
@@ -543,11 +638,9 @@ impl Board {
             let travel_squares = 6u64 << rank_bit_offset;
             if occupancy & travel_squares == 0 {
                 // The squares between the king and the rook are empty.
-                let king_travel_squares = self.king[self.active_color] | travel_squares;
-                if king_travel_squares
-                    .into_bit_index_iter()
-                    .all(|index| !is_attacked(index))
-                {
+                let king_travel_squares =
+                    self.king[self.active_color] | self.king[self.active_color] >> 1;
+                if !any_squares_attacked(king_travel_squares) {
                     // We can castle!
                     output.push(self.apply_move(|b| {
                         b.king[self.active_color] = 2u64 << rank_bit_offset;
@@ -561,10 +654,7 @@ impl Board {
             if occupancy & travel_squares == 0 {
                 // The squares between the king and the rook are empty.
                 let king_travel_squares = self.king[self.active_color] | (48u64 << rank_bit_offset);
-                if king_travel_squares
-                    .into_bit_index_iter()
-                    .all(|index| !is_attacked(index))
-                {
+                if !any_squares_attacked(king_travel_squares) {
                     // We can castle!
                     output.push(self.apply_move(|b| {
                         b.king[self.active_color] = 32u64 << rank_bit_offset;
