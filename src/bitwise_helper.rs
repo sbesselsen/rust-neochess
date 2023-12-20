@@ -3,6 +3,7 @@ pub trait BitwiseHelper {
     fn bit_at_index(&self, index: u32) -> bool;
     fn set_bit(&mut self, index: u32, value: bool);
     fn with_bit(&self, index: u32, value: bool) -> Self;
+    fn move_bit(&mut self, index: u32, to_index: u32);
 }
 
 impl BitwiseHelper for u64 {
@@ -25,6 +26,10 @@ impl BitwiseHelper for u64 {
         let mut result = *self;
         result.set_bit(index, value);
         result
+    }
+    fn move_bit(&mut self, index: u32, to_index: u32) {
+        self.set_bit(to_index, self.bit_at_index(index));
+        self.set_bit(index, false);
     }
 }
 
@@ -69,6 +74,17 @@ mod tests {
 
         let n_back_to_normal = n_bit_4_toggled_bit_5_untoggled.with_bit(4, false);
         assert_eq!(n_back_to_normal, 1234);
+    }
+
+    #[test]
+    fn it_moves_bits() {
+        let mut n: u64 = 1025;
+        n.move_bit(63, 62);
+        assert_eq!(n, 1026);
+        n.move_bit(40, 43);
+        assert_eq!(n, 1026);
+        n.move_bit(53, 52);
+        assert_eq!(n, 2050);
     }
 
     #[test]
