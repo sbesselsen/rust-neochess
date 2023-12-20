@@ -67,7 +67,8 @@ impl Board {
 
     pub fn new_test() -> Board {
         let mut board = Board::new();
-        board.bishops[COLOR_WHITE] = 0x0000000000000040;
+        board.bishops[COLOR_WHITE] = 0x0000000000000001;
+        board.queens[COLOR_WHITE] = 0x0000000000000002;
         board.active_color = COLOR_WHITE;
         board
     }
@@ -79,6 +80,7 @@ impl Board {
         self.push_rook_moves(&mut output);
         self.push_bishop_moves(&mut output);
         self.push_knight_moves(&mut output);
+        self.push_queen_moves(&mut output);
 
         output
     }
@@ -265,6 +267,88 @@ impl Board {
             // Up left
             for offset in 1..((9 - rank).min(file)) {
                 if !bishop_move(index, index - 9 * offset) {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn push_queen_moves(&self, output: &mut Vec<Board>) {
+        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+        let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
+
+        let mut queen_move = |index: u32, new_index: u32| -> bool {
+            if opponent_occupancy.bit_at_index(new_index) {
+                // Capture and then stop.
+                output.push(self.apply_move(|b| {
+                    b.queens[self.active_color].set_bit(index, false);
+                    b.queens[self.active_color].set_bit(new_index, true);
+                    b.clear_square(opponent_color, new_index);
+                }));
+                false
+            } else if occupancy.bit_at_index(new_index) {
+                // Occupied by my own piece; stop.
+                false
+            } else {
+                // Move.
+                output.push(self.apply_move(|b| {
+                    b.queens[self.active_color].set_bit(index, false);
+                    b.queens[self.active_color].set_bit(new_index, true);
+                }));
+                true // Further moves may exist in this direction
+            }
+        };
+
+        for index in self.queens[self.active_color].into_bit_index_iter() {
+            let (rank, file) = Self::rank_file_from_index(index);
+
+            // TODO: there is a no-op in here
+            // Down
+            for rank_offset in 1..rank {
+                if !queen_move(index, index + 8 * rank_offset) {
+                    break;
+                }
+            }
+            // Up
+            for rank_offset in 1..=(8 - rank) {
+                if !queen_move(index, index - 8 * rank_offset) {
+                    break;
+                }
+            }
+            // Left
+            for file_offset in 1..file {
+                if !queen_move(index, index - file_offset) {
+                    break;
+                }
+            }
+            // Right
+            for file_offset in 1..=(8 - file) {
+                if !queen_move(index, index + file_offset) {
+                    break;
+                }
+            }
+            // Down right
+            for offset in 1..(rank.min(9 - file)) {
+                if !queen_move(index, index + 9 * offset) {
+                    break;
+                }
+            }
+            // Down left
+            for offset in 1..(rank.min(file)) {
+                if !queen_move(index, index + 7 * offset) {
+                    break;
+                }
+            }
+            // Up right
+            for offset in 1..((9 - rank).min(9 - file)) {
+                if !queen_move(index, index - 7 * offset) {
+                    break;
+                }
+            }
+            // Up left
+            for offset in 1..((9 - rank).min(file)) {
+                if !queen_move(index, index - 9 * offset) {
                     break;
                 }
             }
