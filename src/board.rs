@@ -157,15 +157,13 @@ impl Board {
                     if opponent_occupancy.bit_at_index(new_index) {
                         // Capture.
                         output.push(self.apply_move(|b| {
-                            b.knights[self.active_color].set_bit(index, false);
-                            b.knights[self.active_color].set_bit(new_index, true);
+                            b.knights[self.active_color].move_bit(index, new_index);
                             b.clear_square(opponent_color, new_index);
                         }));
                     } else if !occupancy.bit_at_index(new_index) {
                         // Move.
                         output.push(self.apply_move(|b| {
-                            b.knights[self.active_color].set_bit(index, false);
-                            b.knights[self.active_color].set_bit(new_index, true);
+                            b.knights[self.active_color].move_bit(index, new_index);
                         }));
                     }
                 }
@@ -189,11 +187,9 @@ impl Board {
                 // Capture and then stop.
                 output.push(self.apply_move(|b| {
                     if is_queen {
-                        b.queens[self.active_color].set_bit(index, false);
-                        b.queens[self.active_color].set_bit(new_index, true);
+                        b.queens[self.active_color].move_bit(index, new_index);
                     } else {
-                        b.rooks[self.active_color].set_bit(index, false);
-                        b.rooks[self.active_color].set_bit(new_index, true);
+                        b.rooks[self.active_color].move_bit(index, new_index);
                     }
                     b.clear_square(opponent_color, new_index);
                 }));
@@ -205,11 +201,9 @@ impl Board {
                 // Move.
                 output.push(self.apply_move(|b| {
                     if is_queen {
-                        b.queens[self.active_color].set_bit(index, false);
-                        b.queens[self.active_color].set_bit(new_index, true);
+                        b.queens[self.active_color].move_bit(index, new_index);
                     } else {
-                        b.rooks[self.active_color].set_bit(index, false);
-                        b.rooks[self.active_color].set_bit(new_index, true);
+                        b.rooks[self.active_color].move_bit(index, new_index);
                     }
                 }));
                 true // Further moves may exist in this direction
@@ -263,11 +257,9 @@ impl Board {
                 // Capture and then stop.
                 output.push(self.apply_move(|b| {
                     if is_queen {
-                        b.queens[self.active_color].set_bit(index, false);
-                        b.queens[self.active_color].set_bit(new_index, true);
+                        b.queens[self.active_color].move_bit(index, new_index);
                     } else {
-                        b.bishops[self.active_color].set_bit(index, false);
-                        b.bishops[self.active_color].set_bit(new_index, true);
+                        b.bishops[self.active_color].move_bit(index, new_index);
                     }
                     b.clear_square(opponent_color, new_index);
                 }));
@@ -279,11 +271,9 @@ impl Board {
                 // Move.
                 output.push(self.apply_move(|b| {
                     if is_queen {
-                        b.queens[self.active_color].set_bit(index, false);
-                        b.queens[self.active_color].set_bit(new_index, true);
+                        b.queens[self.active_color].move_bit(index, new_index);
                     } else {
-                        b.bishops[self.active_color].set_bit(index, false);
-                        b.bishops[self.active_color].set_bit(new_index, true);
+                        b.bishops[self.active_color].move_bit(index, new_index);
                     }
                 }));
                 true // Further moves may exist in this direction
@@ -352,8 +342,7 @@ impl Board {
                 } else {
                     // Just move forward.
                     output.push(self.apply_move(|b| {
-                        b.pawns[self.active_color].set_bit(index, false);
-                        b.pawns[self.active_color].set_bit(move_1_index, true);
+                        b.pawns[self.active_color].move_bit(index, move_1_index);
                     }));
                 }
             }
@@ -364,8 +353,7 @@ impl Board {
                 if !occupancy.bit_at_index(move_2_index) {
                     // Move 2 places forward.
                     output.push(self.apply_move(|b| {
-                        b.pawns[self.active_color].set_bit(index, false);
-                        b.pawns[self.active_color].set_bit(move_2_index, true);
+                        b.pawns[self.active_color].move_bit(index, move_2_index);
                         b.en_passant_square = Some(move_1_index);
                     }));
                 }
@@ -423,8 +411,7 @@ impl Board {
         } else {
             // This is a normal capture.
             output.push(self.apply_move(|b| {
-                b.pawns[self.active_color].set_bit(from_index, false);
-                b.pawns[self.active_color].set_bit(to_index, true);
+                b.pawns[self.active_color].move_bit(from_index, to_index);
                 Self::clear_square(b, opponent_color, to_index);
             }));
         }
@@ -473,15 +460,13 @@ impl Board {
                         if opponent_occupancy.bit_at_index(new_index) {
                             // Capture.
                             output.push(self.apply_move(|b| {
-                                b.king[self.active_color].set_bit(index, false);
-                                b.king[self.active_color].set_bit(new_index, true);
+                                b.king[self.active_color].move_bit(index, new_index);
                                 b.clear_square(opponent_color, new_index);
                             }));
                         } else if !occupancy.bit_at_index(new_index) {
                             // Move.
                             output.push(self.apply_move(|b| {
-                                b.king[self.active_color].set_bit(index, false);
-                                b.king[self.active_color].set_bit(new_index, true);
+                                b.king[self.active_color].move_bit(index, new_index);
                             }));
                         }
                     }
