@@ -66,10 +66,9 @@ impl Board {
     }
 
     pub fn new_test() -> Board {
-        let mut board = Board::new();
-        board.bishops[COLOR_WHITE] = 0x0000000000000001;
-        board.queens[COLOR_WHITE] = 0x0000000000000002;
-        board.active_color = COLOR_WHITE;
+        let mut board = Board::new_setup();
+        board.bishops[COLOR_WHITE] = 0x0000000000000020;
+        board.knights[COLOR_WHITE] = 0x0000000000000040;
         board
     }
 
@@ -99,6 +98,19 @@ impl Board {
             clone.active_color = COLOR_WHITE;
             clone.fullmove_number += 1;
         }
+
+        // Update castling based on whether the rook or king moved
+        // We can probably get away with doing this on every move because it's just some unconditional bit math
+        let white_king_moved = clone.king[COLOR_WHITE] & 0x0000000000000008 == 0;
+        let black_king_moved = clone.king[COLOR_BLACK] & 0x0800000000000000 == 0;
+        clone.can_castle[COLOR_WHITE][SIDE_QUEEN] &=
+            clone.rooks[COLOR_WHITE] & 0x0000000000000080 > 0 && !white_king_moved;
+        clone.can_castle[COLOR_WHITE][SIDE_KING] &=
+            clone.rooks[COLOR_WHITE] & 0x0000000000000001 > 0 && !white_king_moved;
+        clone.can_castle[COLOR_BLACK][SIDE_QUEEN] &=
+            clone.rooks[COLOR_BLACK] & 0x8000000000000000 > 0 && !black_king_moved;
+        clone.can_castle[COLOR_BLACK][SIDE_KING] &=
+            clone.rooks[COLOR_BLACK] & 0x0100000000000000 > 0 && !black_king_moved;
         clone
     }
 
