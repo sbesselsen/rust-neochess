@@ -9,6 +9,8 @@ pub const SIDE_KING: usize = 1;
 pub const ALL_MASK: u64 = 0xFFFFFFFFFFFFFFFF;
 pub const RANK_0_MASK: u64 = 0x00000000000000FF;
 pub const FILE_0_MASK: u64 = 0x8080808080808080;
+pub const DIAG_LTRB_MASK: u64 = 0x8040201008040201;
+pub const DIAG_LBRT_MASK: u64 = 0x0102040810204080;
 
 const KNIGHT_MOVES: &'static [(i32, i32)] = &[
     (2, -1),
@@ -69,17 +71,20 @@ impl Board {
 
     pub fn new_test() -> Board {
         let mut board = Board::new_setup();
-        board.bishops[COLOR_WHITE] = 0x0000000000000000;
-        board.knights[COLOR_WHITE] = 0x0000000000000000;
-        board.queens[COLOR_WHITE] = 0x0000000000000000;
         board.pawns[COLOR_WHITE] = 0;
-        board.king[COLOR_BLACK] = 0;
-        board.queens[COLOR_BLACK] = 0x4400000000000000;
-        board.bishops[COLOR_BLACK] = 0x0000000000000000;
-        board.knights[COLOR_BLACK] = 0x0000000000000000;
-        board.rooks[COLOR_BLACK] = 0x0000000000000000;
+        board.knights[COLOR_WHITE] = 0;
+        board.bishops[COLOR_WHITE] = 0;
+        board.queens[COLOR_WHITE] = 0;
+        board.king[COLOR_WHITE] = 0;
+
         board.pawns[COLOR_BLACK] = 0;
-        board.king[COLOR_BLACK] = 0;
+        // board.rooks[COLOR_BLACK] = 0;
+        board.queens[COLOR_BLACK] = 0;
+        board.bishops[COLOR_BLACK] = 0;
+        board.knights[COLOR_BLACK] = 0;
+
+        board.active_color = COLOR_BLACK;
+
         board
     }
 
@@ -156,6 +161,10 @@ impl Board {
     }
 
     fn push_knight_moves(&self, output: &mut Vec<Board>) {
+        if self.knights[self.active_color] == 0 {
+            return;
+        }
+
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
@@ -187,6 +196,10 @@ impl Board {
     }
 
     fn push_rook_moves(&self, output: &mut Vec<Board>) {
+        if self.rooks[self.active_color] == 0 {
+            return;
+        }
+
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
@@ -243,6 +256,10 @@ impl Board {
     }
 
     fn push_bishop_moves(&self, output: &mut Vec<Board>) {
+        if self.bishops[self.active_color] == 0 {
+            return;
+        }
+
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
@@ -299,6 +316,11 @@ impl Board {
     }
 
     fn push_queen_moves(&self, output: &mut Vec<Board>) {
+        // TODO: get rid of this, fold it into rooklike and bishoplike moves
+        if self.queens[self.active_color] == 0 {
+            return;
+        }
+
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
@@ -381,6 +403,10 @@ impl Board {
     }
 
     fn push_pawn_moves(&self, output: &mut Vec<Board>) {
+        if self.pawns[self.active_color] == 0 {
+            return;
+        }
+
         let occupancy = self.occupancy_bits();
         let start_rank = match self.active_color {
             COLOR_WHITE => 2,
@@ -505,6 +531,10 @@ impl Board {
     }
 
     fn push_king_moves(&self, output: &mut Vec<Board>) {
+        if self.king[self.active_color] == 0 {
+            return;
+        }
+
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
@@ -568,12 +598,12 @@ impl Board {
                 return true;
             }
 
-            let rank_index = if self.active_color == COLOR_WHITE {
-                7
+            let king_rank = if self.active_color == COLOR_WHITE {
+                8
             } else {
-                0
+                1
             };
-            let unshifted_files_mask = squares_mask << (rank_index * 8);
+            let unshifted_files_mask = squares_mask << ((king_rank - 1) * 8);
             let files_mask = unshifted_files_mask
                 | (unshifted_files_mask >> 8)
                 | (unshifted_files_mask >> 16)
@@ -588,7 +618,7 @@ impl Board {
                 | (unshifted_files_mask >> 48)
                 | (unshifted_files_mask >> 56);
 
-            // Rooklike attacks.
+            // Rooklike attacks (rook and queen).
             // We only check vertical attacks because horizontal checks are ruled out by this point.
             let rooklike_attackers =
                 (self.rooks[opponent_color] | self.queens[opponent_color]) & files_mask;
@@ -607,8 +637,6 @@ impl Board {
                         return true;
                     }
 
-                    let (king_rank, _) = Self::rank_file_from_index(squares_mask.leading_zeros());
-
                     let min_rank = attacker_rank.min(king_rank);
                     let max_rank = attacker_rank.max(king_rank);
                     let between_mask =
@@ -620,8 +648,23 @@ impl Board {
                 }
             }
 
+            // Knight attacks.
+            // We can only do this because we know the squares_mask does not extend to A or H file.
+            let king_rank_mask = RANK_0_MASK << (8 * (king_rank - 1));
+            let unshifted_knight_spots_1_lr = (squares_mask << 1) | (squares_mask >> 1);
+            let unshifted_knight_spots_2_lr =
+                ((squares_mask << 2) | squares_mask >> 2) & king_rank_mask;
+            let knight_spots = if self.active_color == COLOR_WHITE {
+                (unshifted_knight_spots_1_lr << 16) | (unshifted_knight_spots_2_lr << 8)
+            } else {
+                (unshifted_knight_spots_1_lr >> 16) | (unshifted_knight_spots_2_lr >> 8)
+            };
+            if knight_spots & self.knights[opponent_color] > 0 {
+                // We have a knight who can attack and of our squares.
+                return true;
+            }
+
             // TODO: bishoplike attacks
-            // TODO: knight attacks
 
             false
         };
@@ -636,8 +679,7 @@ impl Board {
             let travel_squares = 6u64 << rank_bit_offset;
             if occupancy & travel_squares == 0 {
                 // The squares between the king and the rook are empty.
-                let king_travel_squares =
-                    self.king[self.active_color] | self.king[self.active_color] >> 1;
+                let king_travel_squares = self.king[self.active_color] | travel_squares;
                 if !any_squares_attacked(king_travel_squares) {
                     // We can castle!
                     output.push(self.apply_move(|b| {
@@ -680,26 +722,26 @@ impl Board {
         let occupancy = self.occupancy_bits();
         let mut output = String::with_capacity(90);
         for rank in (1..=8).rev() {
-                let occupancy = (occupancy >> 8 * (rank - 1)) as u8;
-                let mut offset: u32 = 0;
-                while offset < 8 {
-                    let remaining_occupancy = occupancy << offset;
-                    let empty_squares = remaining_occupancy.leading_zeros();
-                    if empty_squares > 0 {
-                        if remaining_occupancy == 0 {
-                            output.push_str(&(8 - offset).to_string());
-                        } else {
-                            output.push_str(&empty_squares.to_string());
-                        }
-                        offset += empty_squares;
+            let occupancy = (occupancy >> 8 * (rank - 1)) as u8;
+            let mut offset: u32 = 0;
+            while offset < 8 {
+                let remaining_occupancy = occupancy << offset;
+                let empty_squares = remaining_occupancy.leading_zeros();
+                if empty_squares > 0 {
+                    if remaining_occupancy == 0 {
+                        output.push_str(&(8 - offset).to_string());
                     } else {
-                        output.push(self.square_occupant_to_char(Self::index_from_rank_file(
-                            rank as u32,
-                            offset + 1,
-                        )));
-                        offset += 1;
+                        output.push_str(&empty_squares.to_string());
                     }
+                    offset += empty_squares;
+                } else {
+                    output.push(self.square_occupant_to_char(Self::index_from_rank_file(
+                        rank as u32,
+                        offset + 1,
+                    )));
+                    offset += 1;
                 }
+            }
             if rank > 1 {
                 output.push('/');
             }
