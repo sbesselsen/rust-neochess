@@ -572,7 +572,7 @@ impl Board {
 
         // This implementation is highly optimized to work only for castling, don't use it anywhere else.
         // For example: we assume that squares_mask does not contain any squares on A or H file,
-        // because the king doesn't pass those when castline.
+        // because the king doesn't pass those when castling.
         let any_squares_attacked = |squares_mask: u64| {
             // Attacks by pawns
             let unshifted_pawns_mask = (squares_mask << 1) | (squares_mask >> 1);
@@ -603,20 +603,20 @@ impl Board {
             } else {
                 1
             };
-            let unshifted_files_mask = squares_mask << ((king_rank - 1) * 8);
-            let files_mask = unshifted_files_mask
-                | (unshifted_files_mask >> 8)
-                | (unshifted_files_mask >> 16)
-                | (unshifted_files_mask >> 24)
-                | (unshifted_files_mask >> 32)
-                | (unshifted_files_mask >> 48)
-                | (unshifted_files_mask >> 56)
-                | (unshifted_files_mask >> 8)
-                | (unshifted_files_mask >> 16)
-                | (unshifted_files_mask >> 24)
-                | (unshifted_files_mask >> 32)
-                | (unshifted_files_mask >> 48)
-                | (unshifted_files_mask >> 56);
+            let unshifted_squares_mask = squares_mask << ((king_rank - 1) * 8);
+            let files_mask = unshifted_squares_mask
+                | (unshifted_squares_mask >> 8)
+                | (unshifted_squares_mask >> 16)
+                | (unshifted_squares_mask >> 24)
+                | (unshifted_squares_mask >> 32)
+                | (unshifted_squares_mask >> 48)
+                | (unshifted_squares_mask >> 56)
+                | (unshifted_squares_mask >> 8)
+                | (unshifted_squares_mask >> 16)
+                | (unshifted_squares_mask >> 24)
+                | (unshifted_squares_mask >> 32)
+                | (unshifted_squares_mask >> 48)
+                | (unshifted_squares_mask >> 56);
 
             // Rooklike attacks (rook and queen).
             // We only check vertical attacks because horizontal checks are ruled out by this point.
@@ -660,11 +660,36 @@ impl Board {
                 (unshifted_knight_spots_1_lr >> 16) | (unshifted_knight_spots_2_lr >> 8)
             };
             if knight_spots & self.knights[opponent_color] > 0 {
-                // We have a knight who can attack and of our squares.
+                // We have a knight who can attack some of our squares.
                 return true;
             }
 
-            // TODO: bishoplike attacks
+            // Bishoplike attacks.
+            // These may come from parallellograms going left up and right up from the squares_mask.
+            let potential_bishoplike_squares = if self.active_color == COLOR_WHITE {
+                (((squares_mask << 7) | (squares_mask << 9)) & (RANK_0_MASK << 8))
+                    | (((squares_mask << 14) | (squares_mask << 18)) & (RANK_0_MASK << 16))
+                    | (((squares_mask << 21) | (squares_mask << 27)) & (RANK_0_MASK << 24))
+                    | (((squares_mask << 28) | (squares_mask << 36)) & (RANK_0_MASK << 32))
+                    | (((squares_mask << 35) | (squares_mask << 45)) & (RANK_0_MASK << 40))
+                    | (((squares_mask << 42) | (squares_mask << 54)) & (RANK_0_MASK << 48))
+                    | (((squares_mask << 49) | (squares_mask << 63)) & (RANK_0_MASK << 56))
+            } else {
+                (((squares_mask >> 7) | (squares_mask >> 9)) & (RANK_0_MASK << 48))
+                    | (((squares_mask >> 14) | (squares_mask >> 18)) & (RANK_0_MASK << 40))
+                    | (((squares_mask >> 21) | (squares_mask >> 27)) & (RANK_0_MASK << 32))
+                    | (((squares_mask >> 28) | (squares_mask >> 36)) & (RANK_0_MASK << 24))
+                    | (((squares_mask >> 35) | (squares_mask >> 45)) & (RANK_0_MASK << 16))
+                    | (((squares_mask >> 42) | (squares_mask >> 54)) & (RANK_0_MASK << 8))
+                    | (((squares_mask >> 49) | (squares_mask >> 63)) & RANK_0_MASK)
+            };
+            let bishoplike_attackers = (self.bishops[opponent_color] | self.queens[opponent_color])
+                & potential_bishoplike_squares;
+            if bishoplike_attackers > 0 {
+                println!("Bishoplike attacks not implemented yet!");
+                // There are bishops around (unchecked whether they are in attacking position).
+                // TODO!
+            }
 
             false
         };
