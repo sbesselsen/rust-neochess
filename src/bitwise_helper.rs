@@ -1,12 +1,12 @@
 pub trait BitwiseHelper {
-    fn into_bit_index_iter(&self) -> BitIndexIterator;
+    fn as_bit_index_iter(&self) -> BitIndexIterator;
     fn bit_at_index(&self, index: u32) -> bool;
     fn set_bit(&mut self, index: u32, value: bool);
     fn with_bit(&self, index: u32, value: bool) -> Self;
 }
 
 impl BitwiseHelper for u64 {
-    fn into_bit_index_iter(&self) -> BitIndexIterator {
+    fn as_bit_index_iter(&self) -> BitIndexIterator {
         BitIndexIterator { n: *self }
     }
     fn bit_at_index(&self, index: u32) -> bool {
@@ -22,7 +22,7 @@ impl BitwiseHelper for u64 {
         }
     }
     fn with_bit(&self, index: u32, value: bool) -> Self {
-        let mut result = self.clone();
+        let mut result = *self;
         result.set_bit(index, value);
         result
     }
@@ -41,7 +41,7 @@ impl Iterator for BitIndexIterator {
         } else {
             let result = self.n.leading_zeros();
             // Flip the first bit
-            self.n = self.n ^ (1u64 << (63 - result));
+            self.n ^= 1u64 << (63 - result);
             Some(result)
         }
     }
@@ -73,14 +73,14 @@ mod tests {
 
     #[test]
     fn it_gets_bits() {
-        assert_eq!(129.bit_at_index(63), true);
-        assert_eq!(129.bit_at_index(56), true);
-        assert_eq!(129.bit_at_index(3), false);
+        assert!(129.bit_at_index(63));
+        assert!(129.bit_at_index(56));
+        assert!(!129.bit_at_index(3));
     }
 
     #[test]
     fn it_iterates_bits() {
-        let bits: Vec<u32> = (65572 as u64).into_bit_index_iter().collect();
+        let bits: Vec<u32> = (65572u64).as_bit_index_iter().collect();
         assert_eq!(bits, vec![47, 58, 61]);
     }
 }

@@ -9,14 +9,8 @@ pub const SIDE_KING: usize = 1;
 pub const ALL_MASK: u64 = 0xFFFFFFFFFFFFFFFF;
 pub const RANK_0_MASK: u64 = 0x00000000000000FF;
 pub const FILE_0_MASK: u64 = 0x8080808080808080;
-pub const DIAG_LTRB_MASK: u64 = 0x8040201008040201;
-pub const DIAG_LBRT_MASK: u64 = 0x0102040810204080;
-pub const TRIANGLE_BL_MASK: u64 = 0x80C0E0F0F8FCFEFF;
-pub const TRIANGLE_BR_MASK: u64 = 0x0103070F1F3F7FFF;
-pub const TRIANGLE_TL_MASK: u64 = TRIANGLE_BR_MASK ^ (TRIANGLE_BR_MASK >> 8) | !TRIANGLE_BR_MASK;
-pub const TRIANGLE_TR_MASK: u64 = TRIANGLE_BL_MASK ^ (TRIANGLE_BL_MASK >> 8) | !TRIANGLE_BL_MASK;
 
-const KNIGHT_MOVES: &'static [(i32, i32)] = &[
+const KNIGHT_MOVES: &[(i32, i32)] = &[
     (2, -1),
     (2, 1),
     (1, -2),
@@ -71,27 +65,6 @@ impl Board {
             can_castle: [[true, true], [true, true]],
             ..Board::new()
         }
-    }
-
-    pub fn new_test() -> Board {
-        let mut board = Board::new_setup();
-        board.pawns[COLOR_WHITE] = 0;
-        // board.rooks[COLOR_WHITE] = 0;
-        board.knights[COLOR_WHITE] = 0;
-        board.bishops[COLOR_WHITE] = 0;
-        board.queens[COLOR_WHITE] = 0;
-        // board.king[COLOR_WHITE] = 0;
-
-        board.pawns[COLOR_BLACK] = 0;
-        board.rooks[COLOR_BLACK] = 0;
-        board.queens[COLOR_BLACK] = 0;
-        board.bishops[COLOR_BLACK] = 0;
-        board.knights[COLOR_BLACK] = 0;
-        board.king[COLOR_BLACK] = 0;
-
-        board.active_color = COLOR_WHITE;
-
-        board
     }
 
     pub fn next_boards(&self) -> Vec<Board> {
@@ -175,7 +148,7 @@ impl Board {
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
 
-        for index in self.knights[self.active_color].into_bit_index_iter() {
+        for index in self.knights[self.active_color].as_bit_index_iter() {
             let (rank, file) = Self::rank_file_from_index(index);
             for (rank_offset, file_offset) in KNIGHT_MOVES {
                 let new_rank = (rank as i32) + rank_offset;
@@ -232,7 +205,7 @@ impl Board {
             }
         };
 
-        for index in self.rooks[self.active_color].into_bit_index_iter() {
+        for index in self.rooks[self.active_color].as_bit_index_iter() {
             let (rank, file) = Self::rank_file_from_index(index);
             // Down
             for rank_offset in 1..rank {
@@ -292,7 +265,7 @@ impl Board {
             }
         };
 
-        for index in self.bishops[self.active_color].into_bit_index_iter() {
+        for index in self.bishops[self.active_color].as_bit_index_iter() {
             let (rank, file) = Self::rank_file_from_index(index);
             // Down right
             for offset in 1..(rank.min(9 - file)) {
@@ -353,7 +326,7 @@ impl Board {
             }
         };
 
-        for index in self.queens[self.active_color].into_bit_index_iter() {
+        for index in self.queens[self.active_color].as_bit_index_iter() {
             let (rank, file) = Self::rank_file_from_index(index);
 
             // TODO: there is a no-op in here
@@ -423,7 +396,7 @@ impl Board {
             _ => 8,
         };
 
-        for index in self.pawns[self.active_color].into_bit_index_iter() {
+        for index in self.pawns[self.active_color].as_bit_index_iter() {
             let (rank, file) = Self::rank_file_from_index(index);
 
             let move_1_index: u32 = ((index as i32) + move_offset)
@@ -545,7 +518,7 @@ impl Board {
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
 
-        for index in self.king[self.active_color].into_bit_index_iter() {
+        for index in self.king[self.active_color].as_bit_index_iter() {
             let (rank, file) = Self::rank_file_from_index(index);
             for rank_offset in -1..=1 {
                 for file_offset in -1..=1 {
@@ -630,7 +603,7 @@ impl Board {
                 (self.rooks[opponent_color] | self.queens[opponent_color]) & files_mask;
             if rooklike_attackers > 0 {
                 // Some rooks are potentially on the right files.
-                for attacker_index in rooklike_attackers.into_bit_index_iter() {
+                for attacker_index in rooklike_attackers.as_bit_index_iter() {
                     let (attacker_rank, attacker_file) = Self::rank_file_from_index(attacker_index);
                     let attacker_file_mask = FILE_0_MASK >> (attacker_file - 1);
 
@@ -753,7 +726,7 @@ impl Board {
         let occupancy = self.occupancy_bits();
         let mut output = String::with_capacity(90);
         for rank in (1..=8).rev() {
-            let occupancy = (occupancy >> 8 * (rank - 1)) as u8;
+            let occupancy = (occupancy >> (8 * (rank - 1))) as u8;
             let mut offset: u32 = 0;
             while offset < 8 {
                 let remaining_occupancy = occupancy << offset;
