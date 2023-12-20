@@ -11,6 +11,10 @@ pub const RANK_0_MASK: u64 = 0x00000000000000FF;
 pub const FILE_0_MASK: u64 = 0x8080808080808080;
 pub const DIAG_LTRB_MASK: u64 = 0x8040201008040201;
 pub const DIAG_LBRT_MASK: u64 = 0x0102040810204080;
+pub const TRIANGLE_BL_MASK: u64 = 0x80C0E0F0F8FCFEFF;
+pub const TRIANGLE_BR_MASK: u64 = 0x0103070F1F3F7FFF;
+pub const TRIANGLE_TL_MASK: u64 = TRIANGLE_BR_MASK ^ (TRIANGLE_BR_MASK >> 8) | !TRIANGLE_BR_MASK;
+pub const TRIANGLE_TR_MASK: u64 = TRIANGLE_BL_MASK ^ (TRIANGLE_BL_MASK >> 8) | !TRIANGLE_BL_MASK;
 
 const KNIGHT_MOVES: &'static [(i32, i32)] = &[
     (2, -1),
@@ -72,18 +76,20 @@ impl Board {
     pub fn new_test() -> Board {
         let mut board = Board::new_setup();
         board.pawns[COLOR_WHITE] = 0;
+        // board.rooks[COLOR_WHITE] = 0;
         board.knights[COLOR_WHITE] = 0;
         board.bishops[COLOR_WHITE] = 0;
         board.queens[COLOR_WHITE] = 0;
-        board.king[COLOR_WHITE] = 0;
+        // board.king[COLOR_WHITE] = 0;
 
         board.pawns[COLOR_BLACK] = 0;
-        // board.rooks[COLOR_BLACK] = 0;
+        board.rooks[COLOR_BLACK] = 0;
         board.queens[COLOR_BLACK] = 0;
         board.bishops[COLOR_BLACK] = 0;
         board.knights[COLOR_BLACK] = 0;
+        board.king[COLOR_BLACK] = 0;
 
-        board.active_color = COLOR_BLACK;
+        board.active_color = COLOR_WHITE;
 
         board
     }
@@ -91,11 +97,11 @@ impl Board {
     pub fn next_boards(&self) -> Vec<Board> {
         let mut output = vec![];
 
-        // self.push_pawn_moves(&mut output);
-        // self.push_rook_moves(&mut output);
-        // self.push_bishop_moves(&mut output);
-        // self.push_knight_moves(&mut output);
-        // self.push_queen_moves(&mut output);
+        self.push_pawn_moves(&mut output);
+        self.push_rook_moves(&mut output);
+        self.push_bishop_moves(&mut output);
+        self.push_knight_moves(&mut output);
+        self.push_queen_moves(&mut output);
         self.push_king_moves(&mut output);
 
         output
@@ -887,5 +893,24 @@ impl Default for Board {
 impl Debug for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.to_readable_board())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::board::{Board, COLOR_WHITE};
+
+    #[test]
+    fn empty_board_works() {
+        let board = Board::new();
+        assert_eq!(board.active_color, COLOR_WHITE);
+        assert_eq!(board.next_boards().len(), 0);
+        assert_eq!(board.occupancy_bits(), 0);
+    }
+    #[test]
+    fn setup_board_works() {
+        let normal_board = Board::new_setup();
+        assert_eq!(normal_board.active_color, COLOR_WHITE);
+        assert_eq!(normal_board.next_boards().len(), 20);
     }
 }
