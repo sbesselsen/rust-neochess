@@ -871,7 +871,7 @@ impl Debug for Board {
 
 #[cfg(test)]
 mod tests {
-    use crate::board::{Board, COLOR_WHITE};
+    use crate::board::{Board, COLOR_BLACK, COLOR_WHITE};
 
     #[test]
     fn empty_board_works() {
@@ -885,5 +885,12 @@ mod tests {
         let normal_board = Board::new_setup();
         assert_eq!(normal_board.active_color, COLOR_WHITE);
         assert_eq!(normal_board.next_boards().len(), 20);
+    }
+    #[test]
+    fn queen_moves_correctly() {
+        let mut board = Board::new();
+        board.queens[COLOR_WHITE] = 0x0000000008000000;
+        board.rooks[COLOR_BLACK] = 0x0008000000000000;
+        assert_eq!(board.next_boards().len(), 26);
     }
 }
