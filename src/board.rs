@@ -512,33 +512,10 @@ impl Board {
                         }
                         offset += empty_squares;
                     } else {
-                        let index = Self::index_from_rank_file(rank as u32, offset + 1);
-
-                        if self.pawns[COLOR_BLACK].bit_at_index(index) {
-                            output.push('p');
-                        } else if self.pawns[COLOR_WHITE].bit_at_index(index) {
-                            output.push('P');
-                        } else if self.rooks[COLOR_BLACK].bit_at_index(index) {
-                            output.push('r');
-                        } else if self.rooks[COLOR_WHITE].bit_at_index(index) {
-                            output.push('R');
-                        } else if self.knights[COLOR_BLACK].bit_at_index(index) {
-                            output.push('n');
-                        } else if self.knights[COLOR_WHITE].bit_at_index(index) {
-                            output.push('N');
-                        } else if self.bishops[COLOR_BLACK].bit_at_index(index) {
-                            output.push('b');
-                        } else if self.bishops[COLOR_WHITE].bit_at_index(index) {
-                            output.push('B');
-                        } else if self.queens[COLOR_BLACK].bit_at_index(index) {
-                            output.push('q');
-                        } else if self.queens[COLOR_WHITE].bit_at_index(index) {
-                            output.push('Q');
-                        } else if self.king[COLOR_BLACK].bit_at_index(index) {
-                            output.push('k');
-                        } else if self.king[COLOR_WHITE].bit_at_index(index) {
-                            output.push('K');
-                        }
+                        output.push(self.square_occupant_to_char(Self::index_from_rank_file(
+                            rank as u32,
+                            offset + 1,
+                        )));
                         offset += 1;
                     }
                 }
@@ -587,13 +564,69 @@ impl Board {
         output
     }
 
+    pub fn to_readable_board(&self) -> String {
+        let mut output = String::with_capacity(230);
+        output.push('\n');
+
+        for rank in (1..=8).rev() {
+            output.push_str(&rank.to_string());
+            for file in 1..=8 {
+                output.push(' ');
+                output.push(self.square_occupant_to_char(Self::index_from_rank_file(rank, file)));
+            }
+            output.push('\n');
+        }
+        output.push(' ');
+        for file in 1..=8 {
+            output.push(' ');
+            output.push(Self::file_to_char(file));
+        }
+        output.push('\n');
+        output.push_str(&self.to_fen());
+        output
+    }
+
+    fn square_occupant_to_char(&self, index: u32) -> char {
+        if self.pawns[COLOR_BLACK].bit_at_index(index) {
+            'p'
+        } else if self.pawns[COLOR_WHITE].bit_at_index(index) {
+            'P'
+        } else if self.rooks[COLOR_BLACK].bit_at_index(index) {
+            'r'
+        } else if self.rooks[COLOR_WHITE].bit_at_index(index) {
+            'R'
+        } else if self.knights[COLOR_BLACK].bit_at_index(index) {
+            'n'
+        } else if self.knights[COLOR_WHITE].bit_at_index(index) {
+            'N'
+        } else if self.bishops[COLOR_BLACK].bit_at_index(index) {
+            'b'
+        } else if self.bishops[COLOR_WHITE].bit_at_index(index) {
+            'B'
+        } else if self.queens[COLOR_BLACK].bit_at_index(index) {
+            'q'
+        } else if self.queens[COLOR_WHITE].bit_at_index(index) {
+            'Q'
+        } else if self.king[COLOR_BLACK].bit_at_index(index) {
+            'k'
+        } else if self.king[COLOR_WHITE].bit_at_index(index) {
+            'K'
+        } else {
+            ' '
+        }
+    }
+
     fn coords_to_string(index: u32) -> String {
         let file_index = index % 8;
         let rank_index = 8 - (index / 8);
         debug_assert!(rank_index < 8, "invalid rank_index");
-        debug_assert!(file_index < 8, "invalid file_index");
-        let files = "abcdefgh";
-        files.chars().nth(file_index as usize).unwrap().to_string() + &rank_index.to_string()
+        Self::file_to_char(file_index + 1).to_string() + &rank_index.to_string()
+    }
+
+    fn file_to_char(file: u32) -> char {
+        debug_assert!(file > 0 && file <= 8, "invalid file");
+        let files = " abcdefgh";
+        files.chars().nth(file as usize).unwrap()
     }
 }
 
@@ -605,6 +638,6 @@ impl Default for Board {
 
 impl Debug for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.to_fen())
+        f.write_str(&self.to_readable_board())
     }
 }
