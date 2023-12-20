@@ -529,7 +529,50 @@ impl Board {
             }
         }
 
-        // TODO: castling!
+        let is_attacked = |index: u32| {
+            false // TODO
+        };
+
+        let rank_bit_offset = if self.active_color == COLOR_WHITE {
+            0
+        } else {
+            7 * 8
+        };
+
+        if self.can_castle[self.active_color][SIDE_KING] {
+            let travel_squares = 6u64 << rank_bit_offset;
+            if occupancy & travel_squares == 0 {
+                // The squares between the king and the rook are empty.
+                let king_travel_squares = self.king[self.active_color] | travel_squares;
+                if king_travel_squares
+                    .into_bit_index_iter()
+                    .all(|index| !is_attacked(index))
+                {
+                    // We can castle!
+                    output.push(self.apply_move(|b| {
+                        b.king[self.active_color] = 2u64 << rank_bit_offset;
+                        b.rooks[self.active_color] ^= 5u64 << rank_bit_offset;
+                    }));
+                }
+            }
+        }
+        if self.can_castle[self.active_color][SIDE_QUEEN] {
+            let travel_squares = 112u64 << rank_bit_offset;
+            if occupancy & travel_squares == 0 {
+                // The squares between the king and the rook are empty.
+                let king_travel_squares = self.king[self.active_color] | (48u64 << rank_bit_offset);
+                if king_travel_squares
+                    .into_bit_index_iter()
+                    .all(|index| !is_attacked(index))
+                {
+                    // We can castle!
+                    output.push(self.apply_move(|b| {
+                        b.king[self.active_color] = 32u64 << rank_bit_offset;
+                        b.rooks[self.active_color] ^= 144u64 << rank_bit_offset;
+                    }));
+                }
+            }
+        }
     }
 
     fn occupancy_bits(&self) -> u64 {
