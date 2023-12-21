@@ -10,17 +10,6 @@ pub const ALL_MASK: u64 = 0xFFFFFFFFFFFFFFFF;
 pub const RANK_0_MASK: u64 = 0x00000000000000FF;
 pub const FILE_0_MASK: u64 = 0x8080808080808080;
 
-const KNIGHT_MOVES: &[(i32, i32)] = &[
-    (2, -1),
-    (2, 1),
-    (1, -2),
-    (1, 2),
-    (-1, -2),
-    (-1, 2),
-    (-2, -1),
-    (-2, 1),
-];
-
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Board {
     // Board definition
@@ -282,27 +271,42 @@ impl Board {
 
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
-        let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
+        let active_color_occupancy = self.occupancy_bits_for(self.active_color);
+
+        let can_go_1_left_mask = ALL_MASK ^ FILE_0_MASK;
+        let can_go_2_left_mask = ALL_MASK ^ FILE_0_MASK ^ (FILE_0_MASK >> 1);
+        let can_go_1_right_mask = ALL_MASK ^ (FILE_0_MASK >> 7);
+        let can_go_2_right_mask = ALL_MASK ^ (FILE_0_MASK >> 7) ^ (FILE_0_MASK >> 6);
 
         for index in self.knights[self.active_color].as_bit_index_iter() {
-            let (rank, file) = Self::rank_file_from_index(index);
-            for (rank_offset, file_offset) in KNIGHT_MOVES {
-                let new_rank = (rank as i32) + rank_offset;
-                let new_file = (file as i32) + file_offset;
-                if new_rank > 0 && new_rank <= 8 && new_file > 0 && new_file <= 8 {
-                    let new_index = Self::index_from_rank_file(new_rank as u32, new_file as u32);
-                    if opponent_occupancy.bit_at_index(new_index) {
-                        // Capture.
-                        output.push(self.apply_move(|b| {
-                            b.knights[self.active_color].move_bit(index, new_index);
-                            b.clear_square(opponent_color, new_index);
-                        }));
-                    } else if !occupancy.bit_at_index(new_index) {
-                        // Move.
-                        output.push(self.apply_move(|b| {
-                            b.knights[self.active_color].move_bit(index, new_index);
-                        }));
-                    }
+            let knight_mask = u64::from_bit(index);
+
+            let can_go_1_left = knight_mask & can_go_1_left_mask;
+            let left_1 = (can_go_1_left << 17) | (can_go_1_left >> 15);
+
+            let can_go_2_left = knight_mask & can_go_2_left_mask;
+            let left_2 = (can_go_2_left << 10) | (can_go_2_left >> 6);
+
+            let can_go_1_right = knight_mask & can_go_1_right_mask;
+            let right_1 = (can_go_1_right << 15) | (can_go_1_right >> 17);
+
+            let can_go_2_right = knight_mask & can_go_2_right_mask;
+            let right_2 = (can_go_2_right << 6) | (can_go_2_right >> 10);
+
+            let moved_mask = (left_1 | left_2 | right_1 | right_2) & !active_color_occupancy;
+
+            for to_index in moved_mask.as_bit_index_iter() {
+                if opponent_occupancy.bit_at_index(to_index) {
+                    // Capture.
+                    output.push(self.apply_move(|b| {
+                        b.knights[self.active_color].move_bit(index, to_index);
+                        b.clear_square(opponent_color, to_index);
+                    }));
+                } else {
+                    // Move.
+                    output.push(self.apply_move(|b| {
+                        b.knights[self.active_color].move_bit(index, to_index);
+                    }));
                 }
             }
         }
@@ -953,18 +957,41 @@ mod tests {
         assert_eq!(board.next_boards().len(), 0);
         assert_eq!(board.occupancy_bits(), 0);
     }
+
     #[test]
     fn setup_board_works() {
         let normal_board = Board::new_setup();
         assert_eq!(normal_board.active_color, COLOR_WHITE);
         assert_eq!(normal_board.next_boards().len(), 20);
     }
+
     #[test]
     fn queen_moves_correctly() {
         let mut board = Board::new();
         board.queens[COLOR_WHITE] = 0x0000000008000000;
         board.rooks[COLOR_BLACK] = 0x0008000000000000;
         assert_eq!(board.next_boards().len(), 26);
+    }
+
+    #[test]
+    fn knight_moves_correctly() {
+        let mut board = Board::new_setup();
+        board.knights[COLOR_WHITE] = 0x0000008000020000;
+
+        let mut moves: Vec<Board> = vec![];
+        board.push_knight_moves(&mut moves);
+
+        assert_eq!(moves.len(), 7);
+
+        // TEMP
+        println!("{:?}", board);
+        println!("--------------------");
+
+        let mut moves: Vec<Board> = vec![];
+        board.push_knight_moves(&mut moves);
+        for b in moves {
+            println!("{:?}", b);
+        }
     }
 
     #[test]
