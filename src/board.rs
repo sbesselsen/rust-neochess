@@ -491,7 +491,7 @@ impl Board {
                 let move_2_index: u32 = ((index as i32) + 2 * move_offset)
                     .try_into()
                     .expect("index should be on the board");
-                if !occupancy.bit_at_index(move_2_index) {
+                if !occupancy.bit_at_index(move_1_index) && !occupancy.bit_at_index(move_2_index) {
                     // Move 2 places forward.
                     output.push(self.apply_move(|b| {
                         b.pawns[self.active_color].move_bit(index, move_2_index);
@@ -982,16 +982,17 @@ mod tests {
         board.push_knight_moves(&mut moves);
 
         assert_eq!(moves.len(), 7);
+    }
 
-        // TEMP
-        println!("{:?}", board);
-        println!("--------------------");
+    #[test]
+    fn pawn_moves_correctly() {
+        let mut board = Board::new_setup();
+        board.knights[COLOR_BLACK] = 0x0000000000040000;
 
         let mut moves: Vec<Board> = vec![];
-        board.push_knight_moves(&mut moves);
-        for b in moves {
-            println!("{:?}", b);
-        }
+        board.push_pawn_moves(&mut moves);
+
+        assert_eq!(moves.len(), 16);
     }
 
     #[test]
