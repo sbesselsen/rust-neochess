@@ -93,7 +93,7 @@ impl Board {
     }
 
     pub fn try_parse_fen(fen: &str) -> Result<Board, FenParseError> {
-        let parts: Vec<&str> = fen.trim().split(" ").collect();
+        let parts: Vec<&str> = fen.trim().split(' ').collect();
         if parts.len() != 6 {
             return Err(FenParseError::from("Some elements are missing"));
         }
@@ -101,7 +101,7 @@ impl Board {
         let mut board = Board::new();
 
         // Parse the pieces.
-        let ranks: Vec<&str> = parts[0].split("/").collect();
+        let ranks: Vec<&str> = parts[0].split('/').collect();
         if ranks.len() != 8 {
             return Err(FenParseError::from("Invalid number of ranks"));
         }
@@ -147,7 +147,11 @@ impl Board {
                         board.king[COLOR_WHITE].set_bit(index, true);
                     }
                     '1'..='8' => {
-                        file_index += u32::from_str_radix(&char.to_string(), 10).unwrap() - 1;
+                        file_index += char
+                            .to_string()
+                            .parse::<u32>()
+                            .expect("character in '1'..'8' range should be parseable to u32")
+                            - 1;
                     }
                     _ => {
                         return Err(FenParseError::from(
@@ -190,9 +194,11 @@ impl Board {
             ),
         };
 
-        board.halfmove_clock = u16::from_str_radix(parts[4], 10)
+        board.halfmove_clock = parts[4]
+            .parse()
             .map_err(|_| FenParseError::from("Invalid halfmove clock"))?;
-        board.fullmove_number = u16::from_str_radix(parts[5], 10)
+        board.fullmove_number = parts[5]
+            .parse()
             .map_err(|_| FenParseError::from("Invalid fullmove number"))?;
 
         Ok(board)
@@ -912,7 +918,7 @@ impl Board {
         }
         let files = " abcdefgh";
         let file = files.find(coords.chars().nth(0).unwrap()).unwrap() as u32;
-        let rank = u32::from_str_radix(&coords[1..], 10).map_err(|_| ())?;
+        let rank = coords[1..].parse::<u32>().map_err(|_| ())?;
 
         Ok((rank, file))
     }
