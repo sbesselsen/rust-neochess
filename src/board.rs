@@ -513,7 +513,6 @@ impl Board {
         for to_index in
             (capture_left_mask & (opponent_occupancy | en_passant_mask)).as_bit_index_iter()
         {
-            // TODO: there is a bug here but I have no idea what it might be
             let from_index = (to_index as i32) - (move_offset - 1);
             self.push_pawn_captures(from_index as u32, to_index, output);
         }
