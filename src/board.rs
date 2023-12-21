@@ -37,6 +37,31 @@ pub struct Board {
     fullmove_number: u16,
 }
 
+pub struct FenParseError {
+    message: String,
+}
+
+impl From<String> for FenParseError {
+    fn from(message: String) -> Self {
+        FenParseError { message }
+    }
+}
+
+impl From<&str> for FenParseError {
+    fn from(message: &str) -> Self {
+        FenParseError {
+            message: String::from(message),
+        }
+    }
+}
+
+impl Debug for FenParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("FenParseError: ")?;
+        f.write_str(&self.message)
+    }
+}
+
 impl Board {
     pub fn new() -> Board {
         Board {
@@ -65,6 +90,112 @@ impl Board {
             can_castle: [[true, true], [true, true]],
             ..Board::new()
         }
+    }
+
+    pub fn try_parse_fen(fen: &str) -> Result<Board, FenParseError> {
+        let parts: Vec<&str> = fen.trim().split(" ").collect();
+        if parts.len() != 6 {
+            return Err(FenParseError::from("Some elements are missing"));
+        }
+
+        let mut board = Board::new();
+
+        // Parse the pieces.
+        let ranks: Vec<&str> = parts[0].split("/").collect();
+        if ranks.len() != 8 {
+            return Err(FenParseError::from("Invalid number of ranks"));
+        }
+        for (rank_rev_index, rank_data) in ranks.iter().enumerate() {
+            let mut file_index: u32 = 0;
+            for char in rank_data.chars() {
+                let index = 8 * (rank_rev_index as u32) + file_index;
+                match char {
+                    'p' => {
+                        board.pawns[COLOR_BLACK].set_bit(index, true);
+                    }
+                    'r' => {
+                        board.rooks[COLOR_BLACK].set_bit(index, true);
+                    }
+                    'n' => {
+                        board.knights[COLOR_BLACK].set_bit(index, true);
+                    }
+                    'b' => {
+                        board.bishops[COLOR_BLACK].set_bit(index, true);
+                    }
+                    'q' => {
+                        board.queens[COLOR_BLACK].set_bit(index, true);
+                    }
+                    'k' => {
+                        board.king[COLOR_BLACK].set_bit(index, true);
+                    }
+                    'P' => {
+                        board.pawns[COLOR_WHITE].set_bit(index, true);
+                    }
+                    'R' => {
+                        board.rooks[COLOR_WHITE].set_bit(index, true);
+                    }
+                    'N' => {
+                        board.knights[COLOR_WHITE].set_bit(index, true);
+                    }
+                    'B' => {
+                        board.bishops[COLOR_WHITE].set_bit(index, true);
+                    }
+                    'Q' => {
+                        board.queens[COLOR_WHITE].set_bit(index, true);
+                    }
+                    'K' => {
+                        board.king[COLOR_WHITE].set_bit(index, true);
+                    }
+                    '1'..='8' => {
+                        file_index += u32::from_str_radix(&char.to_string(), 10).unwrap() - 1;
+                    }
+                    _ => {
+                        return Err(FenParseError::from(
+                            String::from("Invalid character: ") + &char.to_string(),
+                        ));
+                    }
+                }
+                file_index += 1;
+                if file_index > 8 {
+                    return Err(FenParseError::from(format!(
+                        "Rank has too many pieces: {}",
+                        (8 - rank_rev_index)
+                    )));
+                }
+            }
+        }
+
+        board.active_color = match parts[1] {
+            "w" => COLOR_WHITE,
+            "b" => COLOR_BLACK,
+            _ => {
+                return Err(FenParseError::from(format!(
+                    "Cannot determine active color; invalid character: {}",
+                    parts[1]
+                )));
+            }
+        };
+
+        board.can_castle[COLOR_WHITE][SIDE_KING] = parts[2].contains('K');
+        board.can_castle[COLOR_WHITE][SIDE_QUEEN] = parts[2].contains('Q');
+        board.can_castle[COLOR_BLACK][SIDE_KING] = parts[2].contains('k');
+        board.can_castle[COLOR_BLACK][SIDE_QUEEN] = parts[2].contains('q');
+
+        board.en_passant_square = match parts[3] {
+            "-" => None,
+            square => Some(
+                Self::try_parse_coords(square)
+                    .map(|(rank, file)| Self::index_from_rank_file(rank, file))
+                    .map_err(|()| FenParseError::from("Invalid en passant square"))?,
+            ),
+        };
+
+        board.halfmove_clock = u16::from_str_radix(parts[4], 10)
+            .map_err(|_| FenParseError::from("Invalid halfmove clock"))?;
+        board.fullmove_number = u16::from_str_radix(parts[5], 10)
+            .map_err(|_| FenParseError::from("Invalid fullmove number"))?;
+
+        Ok(board)
     }
 
     pub fn next_boards(&self) -> Vec<Board> {
@@ -775,6 +906,17 @@ impl Board {
         Self::file_to_char(file_index + 1).to_string() + &rank_index.to_string()
     }
 
+    fn try_parse_coords(coords: &str) -> Result<(u32, u32), ()> {
+        if coords.len() != 2 {
+            return Err(());
+        }
+        let files = " abcdefgh";
+        let file = files.find(coords.chars().nth(0).unwrap()).unwrap() as u32;
+        let rank = u32::from_str_radix(&coords[1..], 10).map_err(|_| ())?;
+
+        Ok((rank, file))
+    }
+
     fn file_to_char(file: u32) -> char {
         debug_assert!(file > 0 && file <= 8, "invalid file");
         let files = " abcdefgh";
@@ -817,5 +959,13 @@ mod tests {
         board.queens[COLOR_WHITE] = 0x0000000008000000;
         board.rooks[COLOR_BLACK] = 0x0008000000000000;
         assert_eq!(board.next_boards().len(), 26);
+    }
+
+    #[test]
+    fn board_parser_works() {
+        let fen = "r1bqkb1r/pppppppp/2n5/8/8/2N4N/PPPPPPP1/R1BQ1K1R w kq - 10 6";
+        let board = Board::try_parse_fen(fen);
+        assert!(board.is_ok());
+        assert!(board.unwrap().to_fen() == fen);
     }
 }
