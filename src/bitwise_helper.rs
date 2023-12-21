@@ -4,6 +4,7 @@ pub trait BitwiseHelper {
     fn set_bit(&mut self, index: u32, value: bool);
     fn with_bit(&self, index: u32, value: bool) -> Self;
     fn move_bit(&mut self, index: u32, to_index: u32);
+    fn from_bit(index: u32) -> u64;
 }
 
 impl BitwiseHelper for u64 {
@@ -30,6 +31,10 @@ impl BitwiseHelper for u64 {
     fn move_bit(&mut self, index: u32, to_index: u32) {
         self.set_bit(to_index, self.bit_at_index(index));
         self.set_bit(index, false);
+    }
+    fn from_bit(index: u32) -> u64 {
+        debug_assert!(index < 64, "invalid index");
+        1u64 << (63 - index)
     }
 }
 
@@ -98,5 +103,11 @@ mod tests {
     fn it_iterates_bits() {
         let bits: Vec<u32> = (65572u64).as_bit_index_iter().collect();
         assert_eq!(bits, vec![47, 58, 61]);
+    }
+
+    #[test]
+    fn from_bit_works() {
+        assert_eq!(u64::from_bit(53), 1024);
+        assert_eq!(u64::from_bit(63), 1);
     }
 }
