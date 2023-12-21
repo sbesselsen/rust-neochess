@@ -370,7 +370,7 @@ impl Board {
                 }
             }
             if file < 8 {
-                let capture_right_index = move_1_index - 1;
+                let capture_right_index = move_1_index + 1;
                 if opponent_occupancy.bit_at_index(capture_right_index) {
                     self.push_pawn_captures(index, capture_right_index, output);
                 }
