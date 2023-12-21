@@ -458,76 +458,88 @@ impl Board {
         }
 
         let occupancy = self.occupancy_bits();
-        let start_rank = match self.active_color {
-            COLOR_WHITE => 2,
-            _ => 7,
-        };
+        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+
         let move_offset: i32 = match self.active_color {
             COLOR_WHITE => -8,
             _ => 8,
         };
 
-        for index in self.pawns[self.active_color].as_bit_index_iter() {
-            let (rank, file) = Self::rank_file_from_index(index);
+        // Move 1 step forward.
+        let move_1_mask = self.pawns[self.active_color].shift_lr(move_offset) & !occupancy;
+        let promote_mask = if self.active_color == COLOR_WHITE {
+            move_1_mask & RANK_0_MASK
+        } else {
+            move_1_mask & (RANK_0_MASK >> 56)
+        };
+        for to_index in (move_1_mask & !promote_mask).as_bit_index_iter() {
+            // Normal move forward.
+            let from_index = (to_index as i32) - move_offset;
+            output.push(self.apply_move(|b| {
+                b.pawns[self.active_color].move_bit(from_index as u32, to_index);
+            }));
+        }
+        for to_index in promote_mask.as_bit_index_iter() {
+            // Promote pawn by moving 1 step forward.
+            let from_index = (to_index as i32) - move_offset;
+            self.push_pawn_promotions(from_index as u32, to_index, output);
+        }
 
-            let move_1_index: u32 = ((index as i32) + move_offset)
-                .try_into()
-                .expect("index should be on the board");
-            if !occupancy.bit_at_index(move_1_index) {
-                // Move 1 place forward.
-                if (self.active_color == COLOR_WHITE && rank == 7)
-                    || (self.active_color == COLOR_BLACK && rank == 2)
-                {
-                    // Promote the pawn!
-                    self.push_pawn_promotions(index, move_1_index, output);
-                } else {
-                    // Just move forward.
-                    output.push(self.apply_move(|b| {
-                        b.pawns[self.active_color].move_bit(index, move_1_index);
-                    }));
-                }
+        // Move 2 steps forward.
+        let move_2_mask = move_1_mask.shift_lr(move_offset)
+            & if self.active_color == COLOR_WHITE {
+                RANK_0_MASK << 24
+            } else {
+                RANK_0_MASK << 32
             }
-            if rank == start_rank {
-                let move_2_index: u32 = ((index as i32) + 2 * move_offset)
-                    .try_into()
-                    .expect("index should be on the board");
-                if !occupancy.bit_at_index(move_1_index) && !occupancy.bit_at_index(move_2_index) {
-                    // Move 2 places forward.
-                    output.push(self.apply_move(|b| {
-                        b.pawns[self.active_color].move_bit(index, move_2_index);
-                        b.en_passant_square = Some(move_1_index);
-                    }));
-                }
-            }
-            let opponent_occupancy =
-                self.occupancy_bits_for(Self::opponent_color(self.active_color));
-            if file > 1 {
-                let capture_left_index = move_1_index - 1;
-                if opponent_occupancy.bit_at_index(capture_left_index) {
-                    self.push_pawn_captures(index, capture_left_index, output);
-                }
-                if self.en_passant_square == Some(capture_left_index) {
-                    self.push_pawn_captures(index, capture_left_index, output);
-                }
-            }
-            if file < 8 {
-                let capture_right_index = move_1_index + 1;
-                if opponent_occupancy.bit_at_index(capture_right_index) {
-                    self.push_pawn_captures(index, capture_right_index, output);
-                }
-                if self.en_passant_square == Some(capture_right_index) {
-                    self.push_pawn_captures(index, capture_right_index, output);
-                }
-            }
+            & !occupancy;
+        for to_index in move_2_mask.as_bit_index_iter() {
+            let en_passant_index = (to_index as i32) - move_offset;
+            let from_index = en_passant_index - move_offset;
+
+            output.push(self.apply_move(|b| {
+                b.pawns[self.active_color].move_bit(from_index as u32, to_index);
+                b.en_passant_square = Some(en_passant_index as u32);
+            }));
+        }
+
+        // Capture.
+        let capture_left_mask =
+            (self.pawns[self.active_color] & !FILE_0_MASK).shift_lr(move_offset - 1);
+        let capture_right_mask =
+            (self.pawns[self.active_color] & !(FILE_0_MASK >> 7)).shift_lr(move_offset + 1);
+        let en_passant_mask = self.en_passant_square.map_or(0, u64::from_bit);
+        for to_index in
+            (capture_left_mask & (opponent_occupancy | en_passant_mask)).as_bit_index_iter()
+        {
+            // TODO: there is a bug here but I have no idea what it might be
+            let from_index = (to_index as i32) - (move_offset - 1);
+            self.push_pawn_captures(from_index as u32, to_index, output);
+        }
+        for to_index in
+            (capture_right_mask & (opponent_occupancy | en_passant_mask)).as_bit_index_iter()
+        {
+            let from_index = (to_index as i32) - (move_offset + 1);
+            self.push_pawn_captures(from_index as u32, to_index, output);
         }
     }
 
     fn push_pawn_captures(&self, from_index: u32, to_index: u32, output: &mut Vec<Board>) {
         let opponent_color = Self::opponent_color(self.active_color);
 
-        let (to_rank, _) = Self::rank_file_from_index(to_index);
-
-        if to_rank == 1 || to_rank == 8 {
+        if self.en_passant_square == Some(to_index) {
+            // Avoid the brick.
+            output.push(self.apply_move(|b| {
+                let clear_index = if self.active_color == COLOR_WHITE {
+                    to_index + 8
+                } else {
+                    to_index - 8
+                };
+                b.pawns[self.active_color].move_bit(from_index, to_index);
+                Self::clear_square(b, opponent_color, clear_index);
+            }));
+        } else if !(8..=56).contains(&to_index) {
             // This is a capture with promotion.
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
@@ -948,7 +960,7 @@ impl Debug for Board {
 
 #[cfg(test)]
 mod tests {
-    use crate::board::{Board, COLOR_BLACK, COLOR_WHITE};
+    use crate::board::{Board, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK};
 
     #[test]
     fn empty_board_works() {
@@ -993,6 +1005,27 @@ mod tests {
         board.push_pawn_moves(&mut moves);
 
         assert_eq!(moves.len(), 16);
+    }
+
+    #[test]
+    fn googled_en_passant() {
+        let mut board = Board::new_setup();
+        board.pawns[COLOR_BLACK] |= 0x0000000040000000;
+
+        let next_boards = board.next_boards();
+
+        let en_passants: Vec<&Board> = next_boards
+            .iter()
+            .filter(|b| b.en_passant_square.is_some())
+            .collect();
+
+        let en_passant_captures: Vec<Board> = en_passants
+            .iter()
+            .flat_map(|b| b.next_boards())
+            .filter(|b| (b.pawns[COLOR_WHITE] & (RANK_0_MASK << 24)) == 0)
+            .collect();
+
+        assert_eq!(en_passant_captures.len(), 2);
     }
 
     #[test]
