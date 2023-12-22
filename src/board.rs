@@ -857,6 +857,17 @@ mod tests {
     }
 
     #[test]
+    fn bishop_moves_correctly() {
+        let mut board = Board::new_setup();
+        board.bishops[COLOR_WHITE] = 0x0000008200000000;
+
+        let mut moves: Vec<Board> = vec![];
+        board.push_bishoplike_moves(&mut moves);
+
+        assert_eq!(moves.len(), 10);
+    }
+
+    #[test]
     fn googled_en_passant() {
         let mut board = Board::new_setup();
         board.pawns[COLOR_BLACK] |= 0x0000000040000000;
