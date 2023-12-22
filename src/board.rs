@@ -287,10 +287,10 @@ impl Board {
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let active_color_occupancy = self.occupancy_bits_for(self.active_color);
 
-        let can_go_1_left_mask = ALL_MASK ^ FILE_0_MASK;
-        let can_go_2_left_mask = ALL_MASK ^ FILE_0_MASK ^ (FILE_0_MASK >> 1);
-        let can_go_1_right_mask = ALL_MASK ^ (FILE_0_MASK >> 7);
-        let can_go_2_right_mask = ALL_MASK ^ (FILE_0_MASK >> 7) ^ (FILE_0_MASK >> 6);
+        let can_go_1_left_mask = !FILE_0_MASK;
+        let can_go_2_left_mask = !FILE_0_MASK ^ (FILE_0_MASK >> 1);
+        let can_go_1_right_mask = !(FILE_0_MASK >> 7);
+        let can_go_2_right_mask = !(FILE_0_MASK >> 7) ^ (FILE_0_MASK >> 6);
 
         for index in self.knights[self.active_color].as_bit_index_iter() {
             let knight_mask = u64::from_bit(index);
