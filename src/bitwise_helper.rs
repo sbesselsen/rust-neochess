@@ -5,7 +5,10 @@ pub trait BitwiseHelper {
     fn with_bit(&self, index: u32, value: bool) -> Self;
     fn move_bit(&mut self, index: u32, to_index: u32);
     fn shift_lr(&self, offset: i32) -> u64;
+    fn discarding_shift_lr(&self, offset: i32) -> u64;
     fn from_bit(index: u32) -> u64;
+    fn discarding_shl(&self, offset: u32) -> u64;
+    fn discarding_shr(&self, offset: u32) -> u64;
 }
 
 impl BitwiseHelper for u64 {
@@ -40,9 +43,30 @@ impl BitwiseHelper for u64 {
             *self >> offset
         }
     }
+    fn discarding_shift_lr(&self, offset: i32) -> u64 {
+        if (-63..=63).contains(&offset) {
+            self.shift_lr(offset)
+        } else {
+            0
+        }
+    }
     fn from_bit(index: u32) -> u64 {
         debug_assert!(index < 64, "invalid index");
         1u64 << (63 - index)
+    }
+    fn discarding_shl(&self, offset: u32) -> u64 {
+        if offset >= 64 {
+            0u64
+        } else {
+            *self << offset
+        }
+    }
+    fn discarding_shr(&self, offset: u32) -> u64 {
+        if offset >= 64 {
+            0u64
+        } else {
+            *self >> offset
+        }
     }
 }
 
@@ -123,5 +147,24 @@ mod tests {
     fn it_shifts_bits() {
         assert_eq!(1u64.shift_lr(-3), 8);
         assert_eq!(96u64.shift_lr(2), 24);
+    }
+
+    #[test]
+    fn it_discard_shifts() {
+        assert_eq!(8u64.discarding_shl(2), 32);
+        assert_eq!(16u64.discarding_shl(0), 16);
+        assert_eq!(20.discarding_shl(65), 0);
+
+        assert_eq!(8u64.discarding_shr(2), 2);
+        assert_eq!(16u64.discarding_shr(0), 16);
+        assert_eq!(20.discarding_shr(65), 0);
+
+        assert_eq!(8u64.discarding_shift_lr(-2), 32);
+        assert_eq!(16u64.discarding_shift_lr(0), 16);
+        assert_eq!(20.discarding_shift_lr(-65), 0);
+
+        assert_eq!(8u64.discarding_shift_lr(2), 2);
+        assert_eq!(16u64.discarding_shift_lr(0), 16);
+        assert_eq!(20.discarding_shift_lr(65), 0);
     }
 }
