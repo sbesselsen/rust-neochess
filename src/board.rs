@@ -51,6 +51,20 @@ impl Debug for FenParseError {
     }
 }
 
+trait ColorDecide {
+    fn wb<T>(&self, white: T, black: T) -> T;
+}
+
+impl ColorDecide for usize {
+    fn wb<T>(&self, white: T, black: T) -> T {
+        if *self == COLOR_WHITE {
+            white
+        } else {
+            black
+        }
+    }
+}
+
 impl Board {
     pub fn new() -> Board {
         Board {
@@ -468,11 +482,7 @@ impl Board {
 
         // Move 1 step forward.
         let move_1_mask = self.pawns[self.active_color].shift_lr(move_offset) & !occupancy;
-        let promote_mask = if self.active_color == COLOR_WHITE {
-            move_1_mask & RANK_0_MASK
-        } else {
-            move_1_mask & (RANK_0_MASK >> 56)
-        };
+        let promote_mask = move_1_mask & self.active_color.wb(RANK_0_MASK, RANK_0_MASK >> 56);
         for to_index in (move_1_mask & !promote_mask).as_bit_index_iter() {
             // Normal move forward.
             let from_index = (to_index as i32) - move_offset;
@@ -488,11 +498,7 @@ impl Board {
 
         // Move 2 steps forward.
         let move_2_mask = move_1_mask.shift_lr(move_offset)
-            & if self.active_color == COLOR_WHITE {
-                RANK_0_MASK << 24
-            } else {
-                RANK_0_MASK << 32
-            }
+            & self.active_color.wb(RANK_0_MASK << 24, RANK_0_MASK << 32)
             & !occupancy;
         for to_index in move_2_mask.as_bit_index_iter() {
             let en_passant_index = (to_index as i32) - move_offset;
@@ -530,11 +536,7 @@ impl Board {
         if self.en_passant_square == Some(to_index) {
             // Avoid the brick.
             output.push(self.apply_move(|b| {
-                let clear_index = if self.active_color == COLOR_WHITE {
-                    to_index + 8
-                } else {
-                    to_index - 8
-                };
+                let clear_index = self.active_color.wb(to_index + 8, to_index - 8);
                 b.pawns[self.active_color].move_bit(from_index, to_index);
                 Self::clear_square(b, opponent_color, clear_index);
             }));
@@ -632,11 +634,9 @@ impl Board {
         let any_squares_attacked = |squares_mask: u64| {
             // Attacks by pawns
             let unshifted_pawns_mask = (squares_mask << 1) | (squares_mask >> 1);
-            let pawns_mask = if self.active_color == COLOR_WHITE {
-                unshifted_pawns_mask << 8
-            } else {
-                unshifted_pawns_mask >> 8
-            };
+            let pawns_mask = self
+                .active_color
+                .wb(unshifted_pawns_mask << 8, unshifted_pawns_mask >> 8);
             if pawns_mask & self.pawns[opponent_color] > 0 {
                 // A pawn attacks some of the squares
                 return true;
@@ -644,21 +644,15 @@ impl Board {
 
             // Attacks by king
             let unshifted_king_mask = squares_mask | (squares_mask << 1) | (squares_mask >> 1);
-            let king_mask = if self.active_color == COLOR_WHITE {
-                unshifted_king_mask << 8
-            } else {
-                unshifted_king_mask >> 8
-            };
+            let king_mask = self
+                .active_color
+                .wb(unshifted_king_mask << 8, unshifted_king_mask >> 8);
             if king_mask & self.king[opponent_color] > 0 {
                 // The opponent's king attacks some of the squares.
                 return true;
             }
 
-            let king_rank = if self.active_color == COLOR_WHITE {
-                8
-            } else {
-                1
-            };
+            let king_rank = self.active_color.wb(8, 1);
             let unshifted_squares_mask = squares_mask << ((king_rank - 1) * 8);
             let files_mask = unshifted_squares_mask
                 | (unshifted_squares_mask >> 8)
@@ -710,11 +704,10 @@ impl Board {
             let unshifted_knight_spots_1_lr = (squares_mask << 1) | (squares_mask >> 1);
             let unshifted_knight_spots_2_lr =
                 ((squares_mask << 2) | squares_mask >> 2) & king_rank_mask;
-            let knight_spots = if self.active_color == COLOR_WHITE {
-                (unshifted_knight_spots_1_lr << 16) | (unshifted_knight_spots_2_lr << 8)
-            } else {
-                (unshifted_knight_spots_1_lr >> 16) | (unshifted_knight_spots_2_lr >> 8)
-            };
+            let knight_spots = self.active_color.wb(
+                (unshifted_knight_spots_1_lr << 16) | (unshifted_knight_spots_2_lr << 8),
+                (unshifted_knight_spots_1_lr >> 16) | (unshifted_knight_spots_2_lr >> 8),
+            );
             if knight_spots & self.knights[opponent_color] > 0 {
                 // We have a knight who can attack some of our squares.
                 return true;
@@ -750,11 +743,7 @@ impl Board {
             false
         };
 
-        let rank_bit_offset = if self.active_color == COLOR_WHITE {
-            0
-        } else {
-            7 * 8
-        };
+        let rank_bit_offset = self.active_color.wb(0, 7 * 8);
 
         if self.can_castle[self.active_color][SIDE_KING] {
             let travel_squares = 6u64 << rank_bit_offset;
@@ -827,11 +816,7 @@ impl Board {
                 output.push('/');
             }
         }
-        output.push_str(if self.active_color == COLOR_WHITE {
-            " w"
-        } else {
-            " b"
-        });
+        output.push_str(self.active_color.wb(" w", " b"));
 
         let mut can_castle = false;
         output.push(' ');
