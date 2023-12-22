@@ -340,6 +340,12 @@ impl Board {
             let mut up_mask = FILE_0_MASK.discarding_shl(64 - index);
             let up_mask_occupied = up_mask & occupancy;
             if up_mask_occupied > 0 {
+                // If there are other pieces inside the mask of up-moves:
+                // Check where the last occupied index is and move up until (and including) there.
+                // That will include a capture of the piece on that square.
+                // Then mask with !self_occupancy so we don't capture our own pieces.
+                // The same method works for down_mask, left_mask and right_mask, although
+                // reversed for down_mask and right_mask.
                 up_mask &= ALL_MASK.discarding_shr(63 - up_mask_occupied.trailing_zeros())
                     & !self_occupancy;
             }
