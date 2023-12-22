@@ -335,63 +335,51 @@ impl Board {
 
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
-        let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
-
-        let mut rook_move = |index: u32, new_index: u32, is_queen: bool| -> bool {
-            if opponent_occupancy.bit_at_index(new_index) {
-                // Capture and then stop.
-                output.push(self.apply_move(|b| {
-                    if is_queen {
-                        b.queens[self.active_color].move_bit(index, new_index);
-                    } else {
-                        b.rooks[self.active_color].move_bit(index, new_index);
-                    }
-                    b.clear_square(opponent_color, new_index);
-                }));
-                false
-            } else if occupancy.bit_at_index(new_index) {
-                // Occupied by my own piece; stop.
-                false
-            } else {
-                // Move.
-                output.push(self.apply_move(|b| {
-                    if is_queen {
-                        b.queens[self.active_color].move_bit(index, new_index);
-                    } else {
-                        b.rooks[self.active_color].move_bit(index, new_index);
-                    }
-                }));
-                true // Further moves may exist in this direction
-            }
-        };
+        let self_occupancy = self.occupancy_bits_for(self.active_color);
+        let occupancy = self_occupancy | opponent_occupancy;
 
         for index in rooklike_mask.as_bit_index_iter() {
-            let (rank, file) = Self::rank_file_from_index(index);
-            let is_queen = self.queens[self.active_color].bit_at_index(index);
+            let (rank, _) = Self::rank_file_from_index(index);
 
-            // Down
-            for rank_offset in 1..rank {
-                if !rook_move(index, index + 8 * rank_offset, is_queen) {
-                    break;
-                }
+            let rank_mask = RANK_0_MASK << 8 * (rank - 1);
+
+            let mut up_mask = FILE_0_MASK.discarding_shl(64 - index);
+            let up_mask_occupied = up_mask & occupancy;
+            if up_mask_occupied > 0 {
+                up_mask &= ALL_MASK.discarding_shr(63 - up_mask_occupied.trailing_zeros())
+                    & !self_occupancy;
             }
-            // Up
-            for rank_offset in 1..=(8 - rank) {
-                if !rook_move(index, index - 8 * rank_offset, is_queen) {
-                    break;
-                }
+
+            let mut down_mask = FILE_0_MASK.discarding_shr(index + 8);
+            let down_mask_occupied = down_mask & occupancy;
+            if down_mask_occupied > 0 {
+                down_mask &= ALL_MASK.discarding_shl(63 - down_mask_occupied.leading_zeros())
+                    & !self_occupancy;
             }
-            // Left
-            for file_offset in 1..file {
-                if !rook_move(index, index - file_offset, is_queen) {
-                    break;
-                }
+
+            let mut left_mask = RANK_0_MASK.discarding_shift_lr((index as i32) - 64) & rank_mask;
+            let left_mask_occupied = left_mask & occupancy;
+            if left_mask_occupied > 0 {
+                left_mask &= ALL_MASK.discarding_shr(63 - left_mask_occupied.trailing_zeros())
+                    & !self_occupancy;
             }
-            // Right
-            for file_offset in 1..=(8 - file) {
-                if !rook_move(index, index + file_offset, is_queen) {
-                    break;
-                }
+
+            let mut right_mask = RANK_0_MASK.discarding_shift_lr((index as i32) - 55) & rank_mask;
+            let right_mask_occupied = right_mask & occupancy;
+            if right_mask_occupied > 0 {
+                right_mask &= ALL_MASK.discarding_shl(63 - right_mask_occupied.leading_zeros())
+                    & !self_occupancy;
+            }
+
+            let to_mask = up_mask | down_mask | left_mask | right_mask;
+            for to_index in to_mask.as_bit_index_iter() {
+                output.push(self.apply_move(|b| {
+                    b.queens[self.active_color].move_bit(index, to_index);
+                    b.rooks[self.active_color].move_bit(index, to_index);
+                    if opponent_occupancy.bit_at_index(to_index) {
+                        b.clear_square(opponent_color, to_index);
+                    }
+                }));
             }
         }
     }
@@ -978,6 +966,17 @@ mod tests {
         board.push_knight_moves(&mut moves);
 
         assert_eq!(moves.len(), 7);
+    }
+
+    #[test]
+    fn rook_moves_correctly() {
+        let mut board = Board::new_setup();
+        board.rooks[COLOR_WHITE] = 0x0000008200000000;
+
+        let mut moves: Vec<Board> = vec![];
+        board.push_rooklike_moves(&mut moves);
+
+        assert_eq!(moves.len(), 19);
     }
 
     #[test]
