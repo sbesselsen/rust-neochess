@@ -335,7 +335,7 @@ impl Board {
         for index in rooklike_mask.as_bit_index_iter() {
             let (rank, _) = Self::rank_file_from_index(index);
 
-            let rank_mask = RANK_0_MASK << 8 * (rank - 1);
+            let rank_mask = RANK_0_MASK << (8 * (rank - 1));
 
             let mut up_mask = FILE_0_MASK.discarding_shl(64 - index);
             let up_mask_occupied = up_mask & occupancy;
