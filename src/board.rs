@@ -310,18 +310,12 @@ impl Board {
             let moved_mask = (left_1 | left_2 | right_1 | right_2) & !active_color_occupancy;
 
             for to_index in moved_mask.as_bit_index_iter() {
-                if opponent_occupancy.bit_at_index(to_index) {
-                    // Capture.
-                    output.push(self.apply_move(|b| {
-                        b.knights[self.active_color].move_bit(index, to_index);
+                output.push(self.apply_move(|b| {
+                    b.knights[self.active_color].move_bit(index, to_index);
+                    if opponent_occupancy.bit_at_index(to_index) {
                         b.clear_square(opponent_color, to_index);
-                    }));
-                } else {
-                    // Move.
-                    output.push(self.apply_move(|b| {
-                        b.knights[self.active_color].move_bit(index, to_index);
-                    }));
-                }
+                    }
+                }));
             }
         }
     }
@@ -526,35 +520,35 @@ impl Board {
             output.push(self.apply_move(|b| {
                 let clear_index = self.active_color.wb(to_index + 8, to_index - 8);
                 b.pawns[self.active_color].move_bit(from_index, to_index);
-                Self::clear_square(b, opponent_color, clear_index);
+                b.clear_square(opponent_color, clear_index);
             }));
         } else if !(8..=56).contains(&to_index) {
             // This is a capture with promotion.
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.rooks[self.active_color].set_bit(to_index, true);
-                Self::clear_square(b, opponent_color, to_index);
+                b.clear_square(opponent_color, to_index);
             }));
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.bishops[self.active_color].set_bit(to_index, true);
-                Self::clear_square(b, opponent_color, to_index);
+                b.clear_square(opponent_color, to_index);
             }));
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.knights[self.active_color].set_bit(to_index, true);
-                Self::clear_square(b, opponent_color, to_index);
+                b.clear_square(opponent_color, to_index);
             }));
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.queens[self.active_color].set_bit(to_index, true);
-                Self::clear_square(b, opponent_color, to_index);
+                b.clear_square(opponent_color, to_index);
             }));
         } else {
             // This is a normal capture.
             output.push(self.apply_move(|b| {
                 b.pawns[self.active_color].move_bit(from_index, to_index);
-                Self::clear_square(b, opponent_color, to_index);
+                b.clear_square(opponent_color, to_index);
             }));
         }
     }
