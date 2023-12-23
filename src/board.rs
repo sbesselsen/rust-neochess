@@ -276,6 +276,31 @@ impl Board {
         self.king[color].set_bit(index, false);
     }
 
+    fn knight_moves_mask(&self, mask: u64) -> u64 {
+        // TODO: make it so we don't have to calculate this every damn time
+        let self_occupancy = self.occupancy_bits_for(self.active_color);
+
+        // TODO: make these masks into constants
+        let can_go_1_left_mask = !FILE_0_MASK;
+        let can_go_2_left_mask = !FILE_0_MASK ^ (FILE_0_MASK >> 1);
+        let can_go_1_right_mask = !(FILE_0_MASK >> 7);
+        let can_go_2_right_mask = !(FILE_0_MASK >> 7) ^ (FILE_0_MASK >> 6);
+
+        let can_go_1_left = mask & can_go_1_left_mask;
+        let left_1 = (can_go_1_left << 17) | (can_go_1_left >> 15);
+
+        let can_go_2_left = mask & can_go_2_left_mask;
+        let left_2 = (can_go_2_left << 10) | (can_go_2_left >> 6);
+
+        let can_go_1_right = mask & can_go_1_right_mask;
+        let right_1 = (can_go_1_right << 15) | (can_go_1_right >> 17);
+
+        let can_go_2_right = mask & can_go_2_right_mask;
+        let right_2 = (can_go_2_right << 6) | (can_go_2_right >> 10);
+
+        (left_1 | left_2 | right_1 | right_2) & !self_occupancy
+    }
+
     fn push_knight_moves(&self, output: &mut Vec<Board>) {
         if self.knights[self.active_color] == 0 {
             return;
@@ -283,31 +308,11 @@ impl Board {
 
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
-        let active_color_occupancy = self.occupancy_bits_for(self.active_color);
-
-        let can_go_1_left_mask = !FILE_0_MASK;
-        let can_go_2_left_mask = !FILE_0_MASK ^ (FILE_0_MASK >> 1);
-        let can_go_1_right_mask = !(FILE_0_MASK >> 7);
-        let can_go_2_right_mask = !(FILE_0_MASK >> 7) ^ (FILE_0_MASK >> 6);
 
         for index in self.knights[self.active_color].as_bit_index_iter() {
             let knight_mask = u64::from_bit(index);
 
-            let can_go_1_left = knight_mask & can_go_1_left_mask;
-            let left_1 = (can_go_1_left << 17) | (can_go_1_left >> 15);
-
-            let can_go_2_left = knight_mask & can_go_2_left_mask;
-            let left_2 = (can_go_2_left << 10) | (can_go_2_left >> 6);
-
-            let can_go_1_right = knight_mask & can_go_1_right_mask;
-            let right_1 = (can_go_1_right << 15) | (can_go_1_right >> 17);
-
-            let can_go_2_right = knight_mask & can_go_2_right_mask;
-            let right_2 = (can_go_2_right << 6) | (can_go_2_right >> 10);
-
-            let moved_mask = (left_1 | left_2 | right_1 | right_2) & !active_color_occupancy;
-
-            for to_index in moved_mask.as_bit_index_iter() {
+            for to_index in self.knight_moves_mask(knight_mask).as_bit_index_iter() {
                 output.push(self.apply_move(|b| {
                     b.knights[self.active_color].move_bit(index, to_index);
                     if opponent_occupancy.bit_at_index(to_index) {
@@ -316,6 +321,53 @@ impl Board {
                 }));
             }
         }
+    }
+
+    fn rooklike_moves_mask_for_index(&self, index: u32) -> u64 {
+        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+        let self_occupancy = self.occupancy_bits_for(self.active_color);
+        let occupancy = self_occupancy | opponent_occupancy;
+
+        let (rank, _) = Self::rank_file_from_index(index);
+
+        let rank_mask = RANK_0_MASK << (8 * (rank - 1));
+
+        let mut up_mask = FILE_0_MASK.discarding_shl(64 - index);
+        let up_mask_occupied = up_mask & occupancy;
+        if up_mask_occupied > 0 {
+            // If there are other pieces inside the mask of up-moves:
+            // Check where the last occupied index is and move up until (and including) there.
+            // That will include a capture of the piece on that square.
+            // Then mask with !self_occupancy so we don't capture our own pieces.
+            // The same method works for down_mask, left_mask and right_mask, although
+            // reversed for down_mask and right_mask.
+            up_mask &=
+                ALL_MASK.discarding_shr(63 - up_mask_occupied.trailing_zeros()) & !self_occupancy;
+        }
+
+        let mut down_mask = FILE_0_MASK.discarding_shr(index + 8);
+        let down_mask_occupied = down_mask & occupancy;
+        if down_mask_occupied > 0 {
+            down_mask &=
+                ALL_MASK.discarding_shl(63 - down_mask_occupied.leading_zeros()) & !self_occupancy;
+        }
+
+        let mut left_mask = RANK_0_MASK.discarding_shift_lr((index as i32) - 64) & rank_mask;
+        let left_mask_occupied = left_mask & occupancy;
+        if left_mask_occupied > 0 {
+            left_mask &=
+                ALL_MASK.discarding_shr(63 - left_mask_occupied.trailing_zeros()) & !self_occupancy;
+        }
+
+        let mut right_mask = RANK_0_MASK.discarding_shift_lr((index as i32) - 55) & rank_mask;
+        let right_mask_occupied = right_mask & occupancy;
+        if right_mask_occupied > 0 {
+            right_mask &=
+                ALL_MASK.discarding_shl(63 - right_mask_occupied.leading_zeros()) & !self_occupancy;
+        }
+
+        up_mask | down_mask | left_mask | right_mask
     }
 
     fn push_rooklike_moves(&self, output: &mut Vec<Board>) {
@@ -327,50 +379,12 @@ impl Board {
 
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
-        let self_occupancy = self.occupancy_bits_for(self.active_color);
-        let occupancy = self_occupancy | opponent_occupancy;
 
         for index in rooklike_mask.as_bit_index_iter() {
-            let (rank, _) = Self::rank_file_from_index(index);
-
-            let rank_mask = RANK_0_MASK << (8 * (rank - 1));
-
-            let mut up_mask = FILE_0_MASK.discarding_shl(64 - index);
-            let up_mask_occupied = up_mask & occupancy;
-            if up_mask_occupied > 0 {
-                // If there are other pieces inside the mask of up-moves:
-                // Check where the last occupied index is and move up until (and including) there.
-                // That will include a capture of the piece on that square.
-                // Then mask with !self_occupancy so we don't capture our own pieces.
-                // The same method works for down_mask, left_mask and right_mask, although
-                // reversed for down_mask and right_mask.
-                up_mask &= ALL_MASK.discarding_shr(63 - up_mask_occupied.trailing_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut down_mask = FILE_0_MASK.discarding_shr(index + 8);
-            let down_mask_occupied = down_mask & occupancy;
-            if down_mask_occupied > 0 {
-                down_mask &= ALL_MASK.discarding_shl(63 - down_mask_occupied.leading_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut left_mask = RANK_0_MASK.discarding_shift_lr((index as i32) - 64) & rank_mask;
-            let left_mask_occupied = left_mask & occupancy;
-            if left_mask_occupied > 0 {
-                left_mask &= ALL_MASK.discarding_shr(63 - left_mask_occupied.trailing_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut right_mask = RANK_0_MASK.discarding_shift_lr((index as i32) - 55) & rank_mask;
-            let right_mask_occupied = right_mask & occupancy;
-            if right_mask_occupied > 0 {
-                right_mask &= ALL_MASK.discarding_shl(63 - right_mask_occupied.leading_zeros())
-                    & !self_occupancy;
-            }
-
-            let to_mask = up_mask | down_mask | left_mask | right_mask;
-            for to_index in to_mask.as_bit_index_iter() {
+            for to_index in self
+                .rooklike_moves_mask_for_index(index)
+                .as_bit_index_iter()
+            {
                 output.push(self.apply_move(|b| {
                     b.queens[self.active_color].move_bit(index, to_index);
                     b.rooks[self.active_color].move_bit(index, to_index);
@@ -382,6 +396,50 @@ impl Board {
         }
     }
 
+    fn bishoplike_moves_mask_for_index(&self, index: u32) -> u64 {
+        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+        let self_occupancy = self.occupancy_bits_for(self.active_color);
+        let occupancy = self_occupancy | opponent_occupancy;
+
+        let (_, file) = Self::rank_file_from_index(index);
+
+        let mut up_left_mask = DIAG_TL_MASK.discarding_shl(72 - index)
+            & (ALL_MASK >> index.saturating_sub(9 * (file - 1)));
+        let up_left_mask_occupied = up_left_mask & occupancy;
+        if up_left_mask_occupied > 0 {
+            up_left_mask &= ALL_MASK.discarding_shr(63 - up_left_mask_occupied.trailing_zeros())
+                & !self_occupancy;
+        }
+
+        let mut up_right_mask = DIAG_TR_MASK.discarding_shl(63 - index)
+            & (ALL_MASK >> index.saturating_sub(7 * (8 - file)));
+        let up_right_mask_occupied = up_right_mask & occupancy;
+        if up_right_mask_occupied > 0 {
+            up_right_mask &= ALL_MASK.discarding_shr(63 - up_right_mask_occupied.trailing_zeros())
+                & !self_occupancy;
+        }
+
+        let mut down_left_mask = DIAG_TR_MASK.discarding_shr(index)
+            & (ALL_MASK << 63u32.saturating_sub(index + 7 * (file - 1)));
+        let down_left_mask_occupied = down_left_mask & occupancy;
+        if down_left_mask_occupied > 0 {
+            down_left_mask &= ALL_MASK.discarding_shl(63 - down_left_mask_occupied.leading_zeros())
+                & !self_occupancy;
+        }
+
+        let mut down_right_mask = DIAG_TL_MASK.discarding_shr(index + 9)
+            & (ALL_MASK << 63u32.saturating_sub(index + 9 * (8 - file)));
+        let down_right_mask_occupied = down_right_mask & occupancy;
+        if down_right_mask_occupied > 0 {
+            down_right_mask &= ALL_MASK
+                .discarding_shl(63 - down_right_mask_occupied.leading_zeros())
+                & !self_occupancy;
+        }
+
+        up_left_mask | up_right_mask | down_left_mask | down_right_mask
+    }
+
     fn push_bishoplike_moves(&self, output: &mut Vec<Board>) {
         let bishoplike_mask = self.bishops[self.active_color] | self.queens[self.active_color];
 
@@ -391,50 +449,12 @@ impl Board {
 
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
-        let self_occupancy = self.occupancy_bits_for(self.active_color);
-        let occupancy = self_occupancy | opponent_occupancy;
 
         for index in bishoplike_mask.as_bit_index_iter() {
-            let (_, file) = Self::rank_file_from_index(index);
-
-            let mut up_left_mask = DIAG_TL_MASK.discarding_shl(72 - index)
-                & (ALL_MASK >> index.saturating_sub(9 * (file - 1)));
-            let up_left_mask_occupied = up_left_mask & occupancy;
-            if up_left_mask_occupied > 0 {
-                up_left_mask &= ALL_MASK
-                    .discarding_shr(63 - up_left_mask_occupied.trailing_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut up_right_mask = DIAG_TR_MASK.discarding_shl(63 - index)
-                & (ALL_MASK >> index.saturating_sub(7 * (8 - file)));
-            let up_right_mask_occupied = up_right_mask & occupancy;
-            if up_right_mask_occupied > 0 {
-                up_right_mask &= ALL_MASK
-                    .discarding_shr(63 - up_right_mask_occupied.trailing_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut down_left_mask = DIAG_TR_MASK.discarding_shr(index)
-                & (ALL_MASK << 63u32.saturating_sub(index + 7 * (file - 1)));
-            let down_left_mask_occupied = down_left_mask & occupancy;
-            if down_left_mask_occupied > 0 {
-                down_left_mask &= ALL_MASK
-                    .discarding_shl(63 - down_left_mask_occupied.leading_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut down_right_mask = DIAG_TL_MASK.discarding_shr(index + 9)
-                & (ALL_MASK << 63u32.saturating_sub(index + 9 * (8 - file)));
-            let down_right_mask_occupied = down_right_mask & occupancy;
-            if down_right_mask_occupied > 0 {
-                down_right_mask &= ALL_MASK
-                    .discarding_shl(63 - down_right_mask_occupied.leading_zeros())
-                    & !self_occupancy;
-            }
-
-            let to_mask = up_left_mask | up_right_mask | down_left_mask | down_right_mask;
-            for to_index in to_mask.as_bit_index_iter() {
+            for to_index in self
+                .bishoplike_moves_mask_for_index(index)
+                .as_bit_index_iter()
+            {
                 output.push(self.apply_move(|b| {
                     b.queens[self.active_color].move_bit(index, to_index);
                     b.bishops[self.active_color].move_bit(index, to_index);
@@ -567,6 +587,25 @@ impl Board {
         }));
     }
 
+    fn king_moves_mask(&self, mask: u64) -> u64 {
+        let self_occupancy = self.occupancy_bits_for(self.active_color);
+
+        let can_go_left_mask = !FILE_0_MASK;
+        let can_go_right_mask = !(FILE_0_MASK >> 7);
+
+        let can_go_left = mask & can_go_left_mask;
+        let left_mask = (can_go_left << 1) | (can_go_left << 9) | (can_go_left >> 7);
+
+        let can_go_right = mask & can_go_right_mask;
+        let right_mask = (can_go_right >> 1) | (can_go_right >> 9) | (can_go_right << 7);
+
+        let up_mask = mask << 8;
+
+        let down_mask = mask >> 8;
+
+        (left_mask | right_mask | up_mask | down_mask) & !self_occupancy
+    }
+
     fn push_king_moves(&self, output: &mut Vec<Board>) {
         if self.king[self.active_color] == 0 {
             return;
@@ -575,26 +614,11 @@ impl Board {
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let self_occupancy = self.occupancy_bits_for(self.active_color);
-
-        let can_go_left_mask = !FILE_0_MASK;
-        let can_go_right_mask = !(FILE_0_MASK >> 7);
+        let occupancy = self_occupancy | opponent_occupancy;
 
         for index in self.king[self.active_color].as_bit_index_iter() {
             let mask = u64::from_bit(index);
-
-            let can_go_left = mask & can_go_left_mask;
-            let left_mask = (can_go_left << 1) | (can_go_left << 9) | (can_go_left >> 7);
-
-            let can_go_right = mask & can_go_right_mask;
-            let right_mask = (can_go_right >> 1) | (can_go_right >> 9) | (can_go_right << 7);
-
-            let up_mask = mask << 8;
-
-            let down_mask = mask >> 8;
-
-            let moves_mask = (left_mask | right_mask | up_mask | down_mask) & !self_occupancy;
-
-            for to_index in moves_mask.as_bit_index_iter() {
+            for to_index in self.king_moves_mask(mask).as_bit_index_iter() {
                 output.push(self.apply_move(|b| {
                     b.king[self.active_color].move_bit(index, to_index);
                     if opponent_occupancy.bit_at_index(to_index) {
@@ -604,7 +628,88 @@ impl Board {
             }
         }
 
-        // TODO: castling
+        if self.can_castle[self.active_color][SIDE_KING] {
+            let must_be_open_mask = 6u64 << self.active_color.wb(0, 56);
+            if must_be_open_mask & occupancy == 0 {
+                let must_not_be_attacked_mask = 14u64 << self.active_color.wb(0, 56);
+                if !self.mask_is_attacked(must_not_be_attacked_mask) {
+                    // We can castle.
+                    let king_index = self.active_color.wb(60, 4);
+                    let rook_index = self.active_color.wb(63, 7);
+                    output.push(self.apply_move(|b| {
+                        b.king[self.active_color].move_bit(king_index, king_index + 2);
+                        b.rooks[self.active_color].move_bit(rook_index, rook_index - 2);
+                    }));
+                }
+            }
+        }
+        if self.can_castle[self.active_color][SIDE_QUEEN] {
+            let must_be_open_mask = 112u64 << self.active_color.wb(0, 56);
+            if must_be_open_mask & occupancy == 0 {
+                let must_not_be_attacked_mask = 56u64 << self.active_color.wb(0, 56);
+                if !self.mask_is_attacked(must_not_be_attacked_mask) {
+                    // We can castle.
+                    let king_index = self.active_color.wb(60, 4);
+                    let rook_index = self.active_color.wb(56, 0);
+                    output.push(self.apply_move(|b| {
+                        b.king[self.active_color].move_bit(king_index, king_index - 2);
+                        b.rooks[self.active_color].move_bit(rook_index, rook_index + 2);
+                    }));
+                }
+            }
+        }
+    }
+
+    fn mask_is_attacked(&self, mask: u64) -> bool {
+        let opponent_color = Self::opponent_color(self.active_color);
+
+        // Is the mask attacked by pawns?
+        let pawn_capture_mask = (mask & !FILE_0_MASK).shift_lr(self.active_color.wb(-9, 7))
+            | (mask & !(FILE_0_MASK >> 7)).shift_lr(self.active_color.wb(-7, 9));
+        if pawn_capture_mask & self.pawns[opponent_color] > 0 {
+            // Attacked by a pawn!
+            return true;
+        }
+
+        // Is the mask attacked by a king?
+        if self.king_moves_mask(mask) & self.king[opponent_color] > 0 {
+            // Attacked by a king!
+            return true;
+        }
+
+        // Is the mask attacked by a knight?
+        if self.knight_moves_mask(mask) & self.knights[opponent_color] > 0 {
+            // Attacked by a knight!
+            return true;
+        }
+
+        let rooklike_attackers = self.rooks[opponent_color] | self.queens[opponent_color];
+        if rooklike_attackers > 0 {
+            let rooklike_moves_mask = mask
+                .as_bit_index_iter()
+                .map(|index| self.rooklike_moves_mask_for_index(index))
+                .reduce(|a, b| a | b)
+                .expect("there should be at least 1 active bit in the mask");
+            if rooklike_moves_mask & rooklike_attackers > 0 {
+                // Attacked rooklike by a rook or a queen!
+                return true;
+            }
+        }
+
+        let bishoplike_attackers = self.bishops[opponent_color] | self.queens[opponent_color];
+        if bishoplike_attackers > 0 {
+            let bishoplike_moves_mask = mask
+                .as_bit_index_iter()
+                .map(|index| self.bishoplike_moves_mask_for_index(index))
+                .reduce(|a, b| a | b)
+                .expect("there should be at least 1 active bit in the mask");
+            if bishoplike_moves_mask & bishoplike_attackers > 0 {
+                // Attacked bishoplike by a bishop or a queen!
+                return true;
+            }
+        }
+
+        false
     }
 
     fn occupancy_bits(&self) -> u64 {
@@ -947,5 +1052,80 @@ mod tests {
             0,
             7,
         );
+    }
+
+    #[test]
+    fn castling_for_white_works() {
+        let board = Board::try_parse_fen(
+            "r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+        )
+        .unwrap();
+        let mut moves: Vec<Board> = vec![];
+        board.push_king_moves(&mut moves);
+
+        assert_eq!(moves.len(), 3);
+
+        // King can't castle because of a bishop.
+        let board = Board::try_parse_fen(
+            "r2qkb1r/ppp2ppp/2np1n2/1B2p1N1/2b1P3/2N3P1/PPPP1P1P/R1BQK2R w KQkq - 1 7",
+        )
+        .unwrap();
+        let mut moves: Vec<Board> = vec![];
+        board.push_king_moves(&mut moves);
+
+        assert_eq!(moves.len(), 2);
+
+        // King can castle on both sides.
+        let board = Board::try_parse_fen(
+            "r1b1kb1r/1ppq1ppp/p1np4/1B2p1B1/4P1n1/2NP1N2/PPPQ1PPP/R3K2R w KQkq - 0 8",
+        )
+        .unwrap();
+        let mut moves: Vec<Board> = vec![];
+        board.push_king_moves(&mut moves);
+
+        assert_eq!(moves.len(), 5);
+
+        // King can castle kingside but not queenside.
+        let board = Board::try_parse_fen(
+            "r1b1kb1r/1ppq1ppp/p1Bp4/4p1B1/4P3/2NP1N2/PPPQ1nPP/R3K2R w KQkq - 0 9",
+        )
+        .unwrap();
+        let mut moves: Vec<Board> = vec![];
+        board.push_king_moves(&mut moves);
+
+        assert_eq!(moves.len(), 5);
+    }
+
+    #[test]
+    fn castling_for_black_works() {
+        let board = Board::try_parse_fen(
+            "rnbqk2r/pppp1ppp/5n2/1B2p3/1b2P3/P4N2/1PPP1PPP/RNBQK2R b KQkq - 0 4",
+        )
+        .unwrap();
+        let mut moves: Vec<Board> = vec![];
+        board.push_king_moves(&mut moves);
+
+        assert_eq!(moves.len(), 3);
+
+        // King can't castle because it has already moved.
+        let board = Board::try_parse_fen(
+            "rnbqk2r/pppp1ppp/5n2/1B2p3/1b2P3/P4N2/1PPP1PPP/RNBQK2R b KQq - 0 4",
+        )
+        .unwrap();
+        let mut moves: Vec<Board> = vec![];
+        board.push_king_moves(&mut moves);
+
+        assert_eq!(moves.len(), 2);
+
+        // King can't castle queenside because of a pawn.
+        let board = Board::try_parse_fen(
+            "r3k2r/p1Pq1ppp/1pn5/4p3/1Pb1P1n1/5N2/1PP2PPP/RNBQK2R b KQkq - 0 10",
+        )
+        .unwrap();
+        let mut moves: Vec<Board> = vec![];
+        board.push_king_moves(&mut moves);
+
+        // Again, this seems wrong, but we can put the king in check.
+        assert_eq!(moves.len(), 4);
     }
 }
