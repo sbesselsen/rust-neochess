@@ -97,6 +97,21 @@ impl Board {
         }
     }
 
+    pub fn local_eval(&self) -> f64 {
+        // TODO:
+        self.local_eval_color(COLOR_WHITE) - self.local_eval_color(COLOR_BLACK)
+    }
+
+    fn local_eval_color(&self, color: usize) -> f64 {
+        // TODO: deduct 0.5 for every doubled, blocked or isolated pawn
+        200.0 * self.king[color].count_ones() as f64
+            + 1.0 * self.pawns[color].count_ones() as f64
+            + 5.0 * self.rooks[color].count_ones() as f64
+            + 3.0 * self.knights[color].count_ones() as f64
+            + 3.0 * self.bishops[color].count_ones() as f64
+            + 9.0 * self.queens[color].count_ones() as f64
+    }
+
     pub fn try_parse_fen(fen: &str) -> Result<Board, FenParseError> {
         let parts: Vec<&str> = fen.trim().split(' ').collect();
         if parts.len() != 6 {
@@ -1143,6 +1158,16 @@ mod tests {
 
         // Again, this seems wrong, but we can put the king in check.
         assert_eq!(moves.len(), 4);
+    }
+
+    #[test]
+    fn local_eval() {
+        let board = Board::try_parse_fen("1R6/2p4n/2k3pr/R6p/P7/3P2PN/nK3Pp1/8 b - - 0 1").unwrap();
+        assert_eq!(board.local_eval(), 2.0);
+
+        let board =
+            Board::try_parse_fen("3K3N/3bRp1r/B5p1/4p2N/1B5R/5pP1/P1k5/8 w - - 0 1").unwrap();
+        assert_eq!(board.local_eval(), 12.0);
     }
 
     #[test]
