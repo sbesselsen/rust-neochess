@@ -9,6 +9,8 @@ pub const SIDE_KING: usize = 1;
 pub const ALL_MASK: u64 = 0xFFFFFFFFFFFFFFFF;
 pub const RANK_0_MASK: u64 = 0x00000000000000FF;
 pub const FILE_0_MASK: u64 = 0x8080808080808080;
+pub const DIAG_TL_MASK: u64 = 0x8040201008040201;
+pub const DIAG_TR_MASK: u64 = 0x0102040810204080;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Board {
@@ -393,63 +395,57 @@ impl Board {
 
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
-        let occupancy = self.occupancy_bits_for(self.active_color) | opponent_occupancy;
-
-        let mut bishop_move = |index: u32, new_index: u32, is_queen: bool| -> bool {
-            if opponent_occupancy.bit_at_index(new_index) {
-                // Capture and then stop.
-                output.push(self.apply_move(|b| {
-                    if is_queen {
-                        b.queens[self.active_color].move_bit(index, new_index);
-                    } else {
-                        b.bishops[self.active_color].move_bit(index, new_index);
-                    }
-                    b.clear_square(opponent_color, new_index);
-                }));
-                false
-            } else if occupancy.bit_at_index(new_index) {
-                // Occupied by my own piece; stop.
-                false
-            } else {
-                // Move.
-                output.push(self.apply_move(|b| {
-                    if is_queen {
-                        b.queens[self.active_color].move_bit(index, new_index);
-                    } else {
-                        b.bishops[self.active_color].move_bit(index, new_index);
-                    }
-                }));
-                true // Further moves may exist in this direction
-            }
-        };
+        let self_occupancy = self.occupancy_bits_for(self.active_color);
+        let occupancy = self_occupancy | opponent_occupancy;
 
         for index in bishoplike_mask.as_bit_index_iter() {
-            let (rank, file) = Self::rank_file_from_index(index);
-            let is_queen = self.queens[self.active_color].bit_at_index(index);
+            let (_, file) = Self::rank_file_from_index(index);
 
-            // Down right
-            for offset in 1..(rank.min(9 - file)) {
-                if !bishop_move(index, index + 9 * offset, is_queen) {
-                    break;
-                }
+            let mut up_left_mask = DIAG_TL_MASK.discarding_shl(72 - index)
+                & (ALL_MASK >> index.checked_sub(9 * (file - 1)).unwrap_or(0));
+            let up_left_mask_occupied = up_left_mask & occupancy;
+            if up_left_mask_occupied > 0 {
+                up_left_mask &= ALL_MASK
+                    .discarding_shr(63 - up_left_mask_occupied.trailing_zeros())
+                    & !self_occupancy;
             }
-            // Down left
-            for offset in 1..(rank.min(file)) {
-                if !bishop_move(index, index + 7 * offset, is_queen) {
-                    break;
-                }
+
+            let mut up_right_mask = DIAG_TR_MASK.discarding_shl(63 - index)
+                & (ALL_MASK >> index.checked_sub(7 * (8 - file)).unwrap_or(0));
+            let up_right_mask_occupied = up_right_mask & occupancy;
+            if up_right_mask_occupied > 0 {
+                up_right_mask &= ALL_MASK
+                    .discarding_shr(63 - up_right_mask_occupied.trailing_zeros())
+                    & !self_occupancy;
             }
-            // Up right
-            for offset in 1..((9 - rank).min(9 - file)) {
-                if !bishop_move(index, index - 7 * offset, is_queen) {
-                    break;
-                }
+
+            let mut down_left_mask = DIAG_TR_MASK.discarding_shr(index)
+                & (ALL_MASK << 63u32.checked_sub(index + 7 * (file - 1)).unwrap_or(0));
+            let down_left_mask_occupied = down_left_mask & occupancy;
+            if down_left_mask_occupied > 0 {
+                down_left_mask &= ALL_MASK
+                    .discarding_shl(63 - down_left_mask_occupied.leading_zeros())
+                    & !self_occupancy;
             }
-            // Up left
-            for offset in 1..((9 - rank).min(file)) {
-                if !bishop_move(index, index - 9 * offset, is_queen) {
-                    break;
-                }
+
+            let mut down_right_mask = DIAG_TL_MASK.discarding_shr(index + 9)
+                & (ALL_MASK << 63u32.checked_sub(index + 9 * (8 - file)).unwrap_or(0));
+            let down_right_mask_occupied = down_right_mask & occupancy;
+            if down_right_mask_occupied > 0 {
+                down_right_mask &= ALL_MASK
+                    .discarding_shl(63 - down_right_mask_occupied.leading_zeros())
+                    & !self_occupancy;
+            }
+
+            let to_mask = up_left_mask | up_right_mask | down_left_mask | down_right_mask;
+            for to_index in to_mask.as_bit_index_iter() {
+                output.push(self.apply_move(|b| {
+                    b.queens[self.active_color].move_bit(index, to_index);
+                    b.bishops[self.active_color].move_bit(index, to_index);
+                    if opponent_occupancy.bit_at_index(to_index) {
+                        b.clear_square(opponent_color, to_index);
+                    }
+                }));
             }
         }
     }
