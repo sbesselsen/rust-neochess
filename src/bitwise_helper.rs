@@ -24,7 +24,7 @@ impl BitwiseHelper for u64 {
         *self = if value {
             *self | (1u64 << (63 - index))
         } else {
-            *self & (u64::MAX ^ (1u64 << (63 - index)))
+            *self & !(1u64 << (63 - index))
         }
     }
     fn with_bit(&self, index: u32, value: bool) -> Self {
@@ -55,18 +55,10 @@ impl BitwiseHelper for u64 {
         1u64 << (63 - index)
     }
     fn discarding_shl(&self, offset: u32) -> u64 {
-        if offset >= 64 {
-            0u64
-        } else {
-            *self << offset
-        }
+        self.checked_shl(offset).unwrap_or(0)
     }
     fn discarding_shr(&self, offset: u32) -> u64 {
-        if offset >= 64 {
-            0u64
-        } else {
-            *self >> offset
-        }
+        self.checked_shr(offset).unwrap_or(0)
     }
 }
 

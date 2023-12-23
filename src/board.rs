@@ -264,11 +264,7 @@ impl Board {
     }
 
     fn opponent_color(color: usize) -> usize {
-        if color == COLOR_WHITE {
-            COLOR_BLACK
-        } else {
-            COLOR_WHITE
-        }
+        color.wb(COLOR_BLACK, COLOR_WHITE)
     }
 
     fn clear_square(&mut self, color: usize, index: u32) {
@@ -402,7 +398,7 @@ impl Board {
             let (_, file) = Self::rank_file_from_index(index);
 
             let mut up_left_mask = DIAG_TL_MASK.discarding_shl(72 - index)
-                & (ALL_MASK >> index.checked_sub(9 * (file - 1)).unwrap_or(0));
+                & (ALL_MASK >> index.saturating_sub(9 * (file - 1)));
             let up_left_mask_occupied = up_left_mask & occupancy;
             if up_left_mask_occupied > 0 {
                 up_left_mask &= ALL_MASK
@@ -411,7 +407,7 @@ impl Board {
             }
 
             let mut up_right_mask = DIAG_TR_MASK.discarding_shl(63 - index)
-                & (ALL_MASK >> index.checked_sub(7 * (8 - file)).unwrap_or(0));
+                & (ALL_MASK >> index.saturating_sub(7 * (8 - file)));
             let up_right_mask_occupied = up_right_mask & occupancy;
             if up_right_mask_occupied > 0 {
                 up_right_mask &= ALL_MASK
@@ -420,7 +416,7 @@ impl Board {
             }
 
             let mut down_left_mask = DIAG_TR_MASK.discarding_shr(index)
-                & (ALL_MASK << 63u32.checked_sub(index + 7 * (file - 1)).unwrap_or(0));
+                & (ALL_MASK << 63u32.saturating_sub(index + 7 * (file - 1)));
             let down_left_mask_occupied = down_left_mask & occupancy;
             if down_left_mask_occupied > 0 {
                 down_left_mask &= ALL_MASK
@@ -429,7 +425,7 @@ impl Board {
             }
 
             let mut down_right_mask = DIAG_TL_MASK.discarding_shr(index + 9)
-                & (ALL_MASK << 63u32.checked_sub(index + 9 * (8 - file)).unwrap_or(0));
+                & (ALL_MASK << 63u32.saturating_sub(index + 9 * (8 - file)));
             let down_right_mask_occupied = down_right_mask & occupancy;
             if down_right_mask_occupied > 0 {
                 down_right_mask &= ALL_MASK
@@ -459,10 +455,7 @@ impl Board {
         let opponent_color = Self::opponent_color(self.active_color);
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
 
-        let move_offset: i32 = match self.active_color {
-            COLOR_WHITE => -8,
-            _ => 8,
-        };
+        let move_offset = self.active_color.wb(-8, 8);
 
         // Move 1 step forward.
         let move_1_mask = self.pawns[self.active_color].shift_lr(move_offset) & !occupancy;
