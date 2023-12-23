@@ -279,7 +279,6 @@ impl Board {
     fn knight_moves_masks(&self, mask: u64) -> impl Iterator<Item = (u32, u64)> {
         let self_occupancy = self.occupancy_bits_for(self.active_color);
 
-        // TODO: make these masks into constants
         let can_go_1_left_mask = !FILE_0_MASK;
         let can_go_2_left_mask = !FILE_0_MASK ^ (FILE_0_MASK >> 1);
         let can_go_1_right_mask = !(FILE_0_MASK >> 7);
