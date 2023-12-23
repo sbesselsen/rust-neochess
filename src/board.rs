@@ -895,6 +895,8 @@ impl Debug for Board {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::VecDeque, time::Instant};
+
     use crate::board::{Board, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK};
 
     #[test]
@@ -1141,5 +1143,25 @@ mod tests {
 
         // Again, this seems wrong, but we can put the king in check.
         assert_eq!(moves.len(), 4);
+    }
+
+    #[test]
+    #[ignore]
+    fn make_many_boards() {
+        let start = Instant::now();
+
+        let mut queue = VecDeque::new();
+        queue.push_back(Board::new_setup());
+
+        let mut counter = 0;
+        while counter < 1_000_000 {
+            let board = queue.pop_front().unwrap();
+            for b in board.next_boards() {
+                queue.push_back(b);
+                counter += 1;
+            }
+        }
+
+        assert!(start.elapsed().as_millis() < 300);
     }
 }
