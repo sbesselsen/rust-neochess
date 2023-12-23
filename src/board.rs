@@ -459,7 +459,7 @@ impl Board {
 
         // Move 1 step forward.
         let move_1_mask = self.pawns[self.active_color].shift_lr(move_offset) & !occupancy;
-        let promote_mask = move_1_mask & self.active_color.wb(RANK_0_MASK, RANK_0_MASK >> 56);
+        let promote_mask = move_1_mask & self.active_color.wb(RANK_0_MASK << 56, RANK_0_MASK);
         for to_index in (move_1_mask & !promote_mask).as_bit_index_iter() {
             // Normal move forward.
             let from_index = (to_index as i32) - move_offset;
@@ -883,5 +883,69 @@ mod tests {
         let board = Board::try_parse_fen(fen);
         assert!(board.is_ok());
         assert_eq!(board.unwrap().to_fen(), fen);
+    }
+
+    fn test_move_counts(
+        fen: &str,
+        pawn_moves: usize,
+        rooklike_moves: usize,
+        knight_moves: usize,
+        bishoplike_moves: usize,
+        king_moves: usize,
+    ) {
+        let board = Board::try_parse_fen(fen);
+        assert!(board.is_ok());
+
+        let board = board.unwrap();
+
+        let mut moves: Vec<Board> = vec![];
+        board.push_pawn_moves(&mut moves);
+        assert_eq!(moves.len(), pawn_moves);
+
+        let mut moves: Vec<Board> = vec![];
+        board.push_king_moves(&mut moves);
+        // Note that the king is allowed to put itself in check in next_boards().
+        assert_eq!(moves.len(), king_moves);
+
+        let mut moves: Vec<Board> = vec![];
+        board.push_rooklike_moves(&mut moves);
+        assert_eq!(moves.len(), rooklike_moves);
+
+        let mut moves: Vec<Board> = vec![];
+        board.push_bishoplike_moves(&mut moves);
+        assert_eq!(moves.len(), bishoplike_moves);
+
+        let mut moves: Vec<Board> = vec![];
+        board.push_knight_moves(&mut moves);
+        assert_eq!(moves.len(), knight_moves);
+
+        assert_eq!(
+            board.next_boards().len(),
+            pawn_moves + rooklike_moves + knight_moves + bishoplike_moves + king_moves
+        );
+    }
+
+    #[test]
+    fn generated_position_1_moves_correctly() {
+        test_move_counts(
+            "2n4K/1PR4p/2P1k3/8/2N1Pppp/8/3p1BP1/n7 w - - 0 1",
+            10,
+            6,
+            8,
+            9,
+            3,
+        );
+    }
+
+    #[test]
+    fn generated_position_2_moves_correctly() {
+        test_move_counts(
+            "1R6/2p4n/2k3pr/R6p/P7/3P2PN/nK3Pp1/8 b - - 0 1",
+            6,
+            0,
+            6,
+            0,
+            7,
+        );
     }
 }
