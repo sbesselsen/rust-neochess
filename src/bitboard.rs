@@ -21,17 +21,17 @@ enum Check {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct BitBoard {
     // Board definition
-    pawns: [u64; 2],
-    rooks: [u64; 2],
-    bishops: [u64; 2],
-    knights: [u64; 2],
-    queens: [u64; 2],
-    king: [u64; 2],
-    can_castle: [[bool; 2]; 2],
-    active_color: usize,
-    en_passant_square: Option<u32>,
-    halfmove_clock: u16,
-    fullmove_number: u16,
+    pub pawns: [u64; 2],
+    pub rooks: [u64; 2],
+    pub bishops: [u64; 2],
+    pub knights: [u64; 2],
+    pub queens: [u64; 2],
+    pub king: [u64; 2],
+    pub can_castle: [[bool; 2]; 2],
+    pub active_color: usize,
+    pub en_passant_square: Option<u32>,
+    pub halfmove_clock: u16,
+    pub fullmove_number: u16,
 }
 
 #[derive(Debug)]
@@ -649,7 +649,7 @@ impl BitBoard {
         None
     }
 
-    fn apply_mutation<F>(&self, f: F) -> BitBoard
+    pub fn apply_mutation<F>(&self, f: F) -> BitBoard
     where
         F: FnOnce(&mut BitBoard),
     {
@@ -658,7 +658,7 @@ impl BitBoard {
         clone
     }
 
-    fn apply_move<F>(&self, f: F) -> BitBoard
+    pub fn apply_move<F>(&self, f: F) -> BitBoard
     where
         F: FnOnce(&mut BitBoard),
     {
