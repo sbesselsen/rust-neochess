@@ -1,5 +1,5 @@
 use crate::bitwise_helper::BitwiseHelper;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 pub const COLOR_WHITE: usize = 0;
 pub const COLOR_BLACK: usize = 1;
@@ -33,6 +33,8 @@ pub struct BitBoard {
     halfmove_clock: u16,
     fullmove_number: u16,
 }
+
+#[derive(Debug)]
 pub struct FenParseError {
     message: String,
 }
@@ -51,7 +53,7 @@ impl From<&str> for FenParseError {
     }
 }
 
-impl Debug for FenParseError {
+impl Display for FenParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("FenParseError: ")?;
         f.write_str(&self.message)
@@ -1253,6 +1255,75 @@ impl Default for BitBoard {
 }
 
 impl Debug for BitBoard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BitBoard")
+            .field(
+                "pawns",
+                &[
+                    format_args!("0x{:0>16x} /* white */", self.pawns[0]),
+                    format_args!("0x{:0>16x} /* black */", self.pawns[1]),
+                ],
+            )
+            .field(
+                "rooks",
+                &[
+                    format_args!("0x{:0>16x}", self.rooks[0]),
+                    format_args!("0x{:0>16x}", self.rooks[1]),
+                ],
+            )
+            .field(
+                "bishops",
+                &[
+                    format_args!("0x{:0>16x}", self.bishops[0]),
+                    format_args!("0x{:0>16x}", self.bishops[1]),
+                ],
+            )
+            .field(
+                "knights",
+                &[
+                    format_args!("0x{:0>16x}", self.knights[0]),
+                    format_args!("0x{:0>16x}", self.knights[1]),
+                ],
+            )
+            .field(
+                "queens",
+                &[
+                    format_args!("0x{:0>16x}", self.queens[0]),
+                    format_args!("0x{:0>16x}", self.queens[1]),
+                ],
+            )
+            .field(
+                "king",
+                &[
+                    format_args!("0x{:0>16x}", self.king[0]),
+                    format_args!("0x{:0>16x}", self.king[1]),
+                ],
+            )
+            .field(
+                "can_castle",
+                &[
+                    &[
+                        format_args!("{} /* queenside */", self.can_castle[0][0]),
+                        format_args!("{} /* kingside */", self.can_castle[0][1]),
+                    ],
+                    &[
+                        format_args!("{}", self.can_castle[1][0]),
+                        format_args!("{}", self.can_castle[1][1]),
+                    ],
+                ],
+            )
+            .field(
+                "active_color",
+                &format_args!("{}", &self.active_color.wb("COLOR_WHITE", "COLOR_BLACK")),
+            )
+            .field("en_passant_square", &self.en_passant_square)
+            .field("halfmove_clock", &self.halfmove_clock)
+            .field("fullmove_number", &self.fullmove_number)
+            .finish()
+    }
+}
+
+impl Display for BitBoard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.to_readable_board())
     }
