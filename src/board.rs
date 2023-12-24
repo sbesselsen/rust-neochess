@@ -1051,6 +1051,53 @@ impl Board {
             ));
         }
 
+        let moved_bishop = self.bishops[self.active_color] & !after_move.bishops[self.active_color];
+        if moved_bishop > 0 {
+            let to_index = (after_move.bishops[self.active_color]
+                & !self.bishops[self.active_color])
+                .leading_zeros();
+            let to_mask = u64::from_bit(to_index);
+
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            let other_bishops = after_move
+                .bishoplike_moves_masks(to_mask)
+                .map(|(_, m)| m)
+                .reduce(|a, b| a | b)
+                .unwrap_or(0)
+                & after_move.bishops[self.active_color];
+
+            if other_bishops > 0 {
+                // Two bishops could have moved here; we need to differentiate between them.
+                let from_index = moved_bishop.leading_zeros();
+                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                let bishops_on_same_file = ((other_bishops | moved_bishop)
+                    & (FILE_0_MASK >> (from_file - 1)))
+                    .count_ones()
+                    > 1;
+
+                if bishops_on_same_file {
+                    return Some(format!(
+                        "B{}{from_rank}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                } else {
+                    return Some(format!(
+                        "B{}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                }
+            }
+
+            return Some(format!(
+                "B{}{to_rank}{check_suffix}",
+                Self::file_to_char(to_file),
+            ));
+        }
+
         // TODO
 
         None
@@ -1543,6 +1590,30 @@ mod tests {
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Nfg1")));
+    }
+
+    #[test]
+    fn bishop_move_notation() {
+        let board =
+            Board::try_parse_fen("6K1/q7/P3k2P/N1r1P2P/b2R1p2/3p3N/b1b1B1p1/8 b - - 0 1").unwrap();
+
+        let board2 = board.apply_move(|b| {
+            b.bishops[COLOR_BLACK].move_bit(48, 34);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Bc4")));
+
+        let board2 = board.apply_move(|b| {
+            b.bishops[COLOR_BLACK].move_bit(48, 57);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Bab1")));
+
+        let board2 = board.apply_move(|b| {
+            b.bishops[COLOR_BLACK].move_bit(48, 41);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Ba2b3")));
     }
 
     #[test]
