@@ -858,9 +858,6 @@ impl Board {
                     break;
                 }
             }
-            for b in next_boards {
-                println!("{b:?}");
-            }
             if is_checkmate {
                 Check::Checkmate
             } else {
@@ -960,6 +957,52 @@ impl Board {
                 let (to_rank, to_file) = Self::rank_file_from_index(to_index);
                 return Some(format!("K{}{to_rank}", Self::file_to_char(to_file)));
             }
+        }
+
+        let moved_rook = self.rooks[self.active_color] & !after_move.rooks[self.active_color];
+        if moved_rook > 0 {
+            let to_index = (after_move.rooks[self.active_color] & !self.rooks[self.active_color])
+                .leading_zeros();
+            let to_mask = u64::from_bit(to_index);
+
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            let other_rooks = after_move
+                .rooklike_moves_masks(to_mask)
+                .map(|(_, m)| m)
+                .reduce(|a, b| a | b)
+                .unwrap_or(0)
+                & after_move.rooks[self.active_color];
+
+            if other_rooks > 0 {
+                // Two rooks could have moved here; we need to differentiate between them.
+                let from_mask =
+                    self.rooks[self.active_color] & !after_move.rooks[self.active_color];
+                let from_index = from_mask.leading_zeros();
+                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                let rooks_on_same_file =
+                    ((other_rooks | from_mask) & (FILE_0_MASK >> (to_file - 1))).count_ones() > 1;
+
+                if rooks_on_same_file {
+                    return Some(format!(
+                        "R{}{from_rank}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                } else {
+                    return Some(format!(
+                        "R{}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                }
+            }
+
+            return Some(format!(
+                "R{}{to_rank}{check_suffix}",
+                Self::file_to_char(to_file),
+            ));
         }
 
         // TODO
@@ -1404,6 +1447,32 @@ mod tests {
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("O-O-O")));
+    }
+
+    #[test]
+    fn rook_move_notation() {
+        let board =
+            Board::try_parse_fen("1R3K1B/2Pp4/2p5/2r5/2P3k1/1n1P2P1/p6r/q6N b - - 0 1").unwrap();
+
+        let board2 = board.apply_move(|b| {
+            b.rooks[COLOR_BLACK].move_bit(26, 29);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Rf5+")));
+
+        let board2 = board.apply_move(|b| {
+            b.rooks[COLOR_BLACK].move_bit(26, 31);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Rch5")));
+
+        let board =
+            Board::try_parse_fen("1R3K1B/2Pp3r/2p5/8/2P3k1/1n1P2P1/p6r/q6N b - - 0 1").unwrap();
+        let board2 = board.apply_move(|b| {
+            b.rooks[COLOR_BLACK].move_bit(15, 31);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Rh7h5")));
     }
 
     #[test]
