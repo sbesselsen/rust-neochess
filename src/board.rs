@@ -33,7 +33,6 @@ pub struct Board {
     halfmove_clock: u16,
     fullmove_number: u16,
 }
-
 pub struct FenParseError {
     message: String,
 }
@@ -59,11 +58,12 @@ impl Debug for FenParseError {
     }
 }
 
-trait ColorDecide {
+trait ColorHelper {
     fn wb<T>(&self, white: T, black: T) -> T;
+    fn opponent(&self) -> Self;
 }
 
-impl ColorDecide for usize {
+impl ColorHelper for usize {
     fn wb<T>(&self, white: T, black: T) -> T {
         if *self == COLOR_WHITE {
             white
@@ -71,15 +71,10 @@ impl ColorDecide for usize {
             black
         }
     }
-}
 
-pub struct PieceCount {
-    pub pawns: u32,
-    pub rooks: u32,
-    pub knights: u32,
-    pub bishops: u32,
-    pub queens: u32,
-    pub kings: u32,
+    fn opponent(&self) -> Self {
+        self.wb(COLOR_BLACK, COLOR_WHITE)
+    }
 }
 
 impl Board {
@@ -109,21 +104,6 @@ impl Board {
             king: [0x0000000000000008, 0x0800000000000000],
             can_castle: [[true, true], [true, true]],
             ..Board::new()
-        }
-    }
-
-    pub fn count_pieces(&self, color: usize) -> PieceCount {
-        assert!(
-            color == COLOR_WHITE || color == COLOR_BLACK,
-            "color must be COLOR_WHITE or COLOR_BLACK"
-        );
-        PieceCount {
-            pawns: self.pawns[color].count_ones(),
-            rooks: self.rooks[color].count_ones(),
-            knights: self.knights[color].count_ones(),
-            bishops: self.bishops[color].count_ones(),
-            queens: self.queens[color].count_ones(),
-            kings: self.king[color].count_ones(),
         }
     }
 
@@ -251,35 +231,43 @@ impl Board {
         output
     }
 
-    fn apply_move<F>(&self, f: F) -> Board
+    fn apply_mutation<F>(&self, f: F) -> Board
     where
         F: FnOnce(&mut Board),
     {
         let mut clone = self.clone();
-        clone.en_passant_square = None;
         f(&mut clone);
-        clone.halfmove_clock += 1;
-        if clone.active_color == COLOR_WHITE {
-            clone.active_color = COLOR_BLACK;
-        } else {
-            clone.active_color = COLOR_WHITE;
-            clone.fullmove_number += 1;
-        }
-
-        // Update castling based on whether the rook or king moved
-        // We can probably get away with doing this on every move because it's just some unconditional bit math
-        let white_king_moved = clone.king[COLOR_WHITE] & 0x0000000000000008 == 0;
-        let black_king_moved = clone.king[COLOR_BLACK] & 0x0800000000000000 == 0;
-        clone.can_castle[COLOR_WHITE][SIDE_QUEEN] &=
-            clone.rooks[COLOR_WHITE] & 0x0000000000000080 > 0 && !white_king_moved;
-        clone.can_castle[COLOR_WHITE][SIDE_KING] &=
-            clone.rooks[COLOR_WHITE] & 0x0000000000000001 > 0 && !white_king_moved;
-        clone.can_castle[COLOR_BLACK][SIDE_QUEEN] &=
-            clone.rooks[COLOR_BLACK] & 0x8000000000000000 > 0 && !black_king_moved;
-        clone.can_castle[COLOR_BLACK][SIDE_KING] &=
-            clone.rooks[COLOR_BLACK] & 0x0100000000000000 > 0 && !black_king_moved;
-
         clone
+    }
+
+    fn apply_move<F>(&self, f: F) -> Board
+    where
+        F: FnOnce(&mut Board),
+    {
+        self.apply_mutation(|b| {
+            b.en_passant_square = None;
+            f(b);
+            b.halfmove_clock += 1;
+            if b.active_color == COLOR_WHITE {
+                b.active_color = COLOR_BLACK;
+            } else {
+                b.active_color = COLOR_WHITE;
+                b.fullmove_number += 1;
+            }
+
+            // Update castling based on whether the rook or king moved
+            // We can probably get away with doing this on every move because it's just some unconditional bit math
+            let white_king_moved = b.king[COLOR_WHITE] & 0x0000000000000008 == 0;
+            let black_king_moved = b.king[COLOR_BLACK] & 0x0800000000000000 == 0;
+            b.can_castle[COLOR_WHITE][SIDE_QUEEN] &=
+                b.rooks[COLOR_WHITE] & 0x0000000000000080 > 0 && !white_king_moved;
+            b.can_castle[COLOR_WHITE][SIDE_KING] &=
+                b.rooks[COLOR_WHITE] & 0x0000000000000001 > 0 && !white_king_moved;
+            b.can_castle[COLOR_BLACK][SIDE_QUEEN] &=
+                b.rooks[COLOR_BLACK] & 0x8000000000000000 > 0 && !black_king_moved;
+            b.can_castle[COLOR_BLACK][SIDE_KING] &=
+                b.rooks[COLOR_BLACK] & 0x0100000000000000 > 0 && !black_king_moved;
+        })
     }
 
     fn rank_file_from_index(index: u32) -> (u32, u32) {
@@ -293,17 +281,14 @@ impl Board {
         (8 - rank) * 8 + file - 1
     }
 
-    fn opponent_color(color: usize) -> usize {
-        color.wb(COLOR_BLACK, COLOR_WHITE)
-    }
-
     fn clear_square(&mut self, color: usize, index: u32) {
-        self.pawns[color].set_bit(index, false);
-        self.rooks[color].set_bit(index, false);
-        self.knights[color].set_bit(index, false);
-        self.bishops[color].set_bit(index, false);
-        self.queens[color].set_bit(index, false);
-        self.king[color].set_bit(index, false);
+        let mask = !(1u64 << (63 - index));
+        self.pawns[color] &= mask;
+        self.rooks[color] &= mask;
+        self.knights[color] &= mask;
+        self.bishops[color] &= mask;
+        self.queens[color] &= mask;
+        self.king[color] &= mask;
     }
 
     fn knight_moves_masks(&self, mask: u64) -> impl Iterator<Item = (u32, u64)> {
@@ -341,7 +326,7 @@ impl Board {
             return;
         }
 
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
 
         for (index, to_mask) in self.knight_moves_masks(self.knights[self.active_color]) {
@@ -357,7 +342,7 @@ impl Board {
     }
 
     fn rooklike_moves_masks(&self, mask: u64) -> impl Iterator<Item = (u32, u64)> {
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let self_occupancy = self.occupancy_bits_for(self.active_color);
         let occupancy = self_occupancy | opponent_occupancy;
@@ -412,7 +397,7 @@ impl Board {
             return;
         }
 
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
 
         for (index, to_mask) in self.rooklike_moves_masks(rooklike_mask) {
@@ -429,7 +414,7 @@ impl Board {
     }
 
     fn bishoplike_moves_masks(&self, mask: u64) -> impl Iterator<Item = (u32, u64)> {
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let self_occupancy = self.occupancy_bits_for(self.active_color);
         let occupancy = self_occupancy | opponent_occupancy;
@@ -487,7 +472,7 @@ impl Board {
             return;
         }
 
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
 
         for (index, to_mask) in self.bishoplike_moves_masks(bishoplike_mask) {
@@ -509,7 +494,7 @@ impl Board {
         }
 
         let occupancy = self.occupancy_bits();
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
 
         let move_offset = self.active_color.wb(-8, 8);
@@ -565,7 +550,7 @@ impl Board {
     }
 
     fn push_pawn_captures(&self, from_index: u32, to_index: u32, output: &mut Vec<Board>) {
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
 
         if self.en_passant_square == Some(to_index) {
             // Avoid the brick.
@@ -648,7 +633,7 @@ impl Board {
             return;
         }
 
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let self_occupancy = self.occupancy_bits_for(self.active_color);
         let occupancy = self_occupancy | opponent_occupancy;
@@ -698,7 +683,7 @@ impl Board {
     }
 
     fn mask_is_attacked(&self, mask: u64) -> bool {
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
 
         // Is the mask attacked by pawns?
         let pawn_capture_mask = (mask & !FILE_0_MASK).shift_lr(self.active_color.wb(-9, 7))
@@ -878,7 +863,7 @@ impl Board {
     }
 
     pub fn move_as_string(&self, after_move: &Board) -> Option<String> {
-        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_color = self.active_color.opponent();
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
 
         let moved_pawns = self.pawns[self.active_color] & !after_move.pawns[self.active_color];
@@ -1526,26 +1511,6 @@ mod tests {
 
         // Again, this seems wrong, but we can put the king in check.
         assert_eq!(moves.len(), 4);
-    }
-
-    #[test]
-    fn piece_count() {
-        let board = Board::try_parse_fen("1R6/2p4n/2k3pr/R6p/P7/3P2PN/nK3Pp1/8 b - - 0 1").unwrap();
-        let piece_count = board.count_pieces(COLOR_WHITE);
-        assert_eq!(piece_count.pawns, 4);
-        assert_eq!(piece_count.rooks, 2);
-        assert_eq!(piece_count.knights, 1);
-        assert_eq!(piece_count.bishops, 0);
-        assert_eq!(piece_count.queens, 0);
-        assert_eq!(piece_count.kings, 1);
-
-        let piece_count = board.count_pieces(COLOR_BLACK);
-        assert_eq!(piece_count.pawns, 4);
-        assert_eq!(piece_count.rooks, 1);
-        assert_eq!(piece_count.knights, 2);
-        assert_eq!(piece_count.bishops, 0);
-        assert_eq!(piece_count.queens, 0);
-        assert_eq!(piece_count.kings, 1);
     }
 
     #[test]
