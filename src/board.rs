@@ -231,6 +231,422 @@ impl Board {
         output
     }
 
+    pub fn to_fen(&self) -> String {
+        let occupancy = self.occupancy_bits();
+        let mut output = String::with_capacity(90);
+        for rank in (1..=8).rev() {
+            let occupancy = (occupancy >> (8 * (rank - 1))) as u8;
+            let mut offset: u32 = 0;
+            while offset < 8 {
+                let remaining_occupancy = occupancy << offset;
+                let empty_squares = remaining_occupancy.leading_zeros();
+                if empty_squares > 0 {
+                    if remaining_occupancy == 0 {
+                        output.push_str(&(8 - offset).to_string());
+                    } else {
+                        output.push_str(&empty_squares.to_string());
+                    }
+                    offset += empty_squares;
+                } else {
+                    output.push(self.square_occupant_to_char(Self::index_from_rank_file(
+                        rank as u32,
+                        offset + 1,
+                    )));
+                    offset += 1;
+                }
+            }
+            if rank > 1 {
+                output.push('/');
+            }
+        }
+        output.push_str(self.active_color.wb(" w", " b"));
+
+        let mut can_castle = false;
+        output.push(' ');
+        if self.can_castle[COLOR_WHITE][SIDE_KING] {
+            output.push('K');
+            can_castle = true;
+        }
+        if self.can_castle[COLOR_WHITE][SIDE_QUEEN] {
+            output.push('Q');
+            can_castle = true;
+        }
+        if self.can_castle[COLOR_BLACK][SIDE_KING] {
+            output.push('k');
+            can_castle = true;
+        }
+        if self.can_castle[COLOR_BLACK][SIDE_QUEEN] {
+            output.push('q');
+            can_castle = true;
+        }
+        if !can_castle {
+            output.push('-');
+        }
+        output.push(' ');
+        if let Some(square) = self.en_passant_square {
+            output.push_str(&Self::coords_to_string(square));
+        } else {
+            output.push('-');
+        }
+        output.push(' ');
+        output.push_str(&self.halfmove_clock.to_string());
+        output.push(' ');
+        output.push_str(&self.fullmove_number.to_string());
+
+        output
+    }
+
+    pub fn to_readable_board(&self) -> String {
+        let mut output = String::with_capacity(270);
+        output.push('\n');
+
+        for rank in (1..=8).rev() {
+            output.push_str(&rank.to_string());
+            for file in 1..=8 {
+                output.push(' ');
+                output.push(self.square_occupant_to_char(Self::index_from_rank_file(rank, file)));
+            }
+            output.push('\n');
+        }
+        output.push(' ');
+        for file in 1..=8 {
+            output.push(' ');
+            output.push(Self::file_to_char(file));
+        }
+        output.push('\n');
+        output.push_str(&self.to_fen());
+        output
+    }
+
+    pub fn move_as_string(&self, after_move: &Board) -> Option<String> {
+        let opponent_color = self.active_color.opponent();
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+
+        let moved_pawns = self.pawns[self.active_color] & !after_move.pawns[self.active_color];
+        let check_suffix = match after_move.check_state() {
+            Check::None => "",
+            Check::Check => "+",
+            Check::Checkmate => "#",
+        };
+        if moved_pawns > 0 {
+            let from_index = moved_pawns.leading_zeros();
+            let mut to_index = (after_move.pawns[self.active_color]
+                & !self.pawns[self.active_color])
+                .leading_zeros();
+
+            let mut promotion = String::with_capacity(2);
+
+            if to_index == 64 {
+                // Pawn promotion.
+                let new_queen_index = (after_move.queens[self.active_color]
+                    & !self.queens[self.active_color])
+                    .leading_zeros();
+
+                let new_rook_index = (after_move.rooks[self.active_color]
+                    & !self.rooks[self.active_color])
+                    .leading_zeros();
+
+                let new_knight_index = (after_move.knights[self.active_color]
+                    & !self.knights[self.active_color])
+                    .leading_zeros();
+
+                let new_bishop_index = (after_move.bishops[self.active_color]
+                    & !self.bishops[self.active_color])
+                    .leading_zeros();
+
+                if new_queen_index < 64 {
+                    to_index = new_queen_index;
+                    promotion.push_str("=Q");
+                } else if new_rook_index < 64 {
+                    to_index = new_rook_index;
+                    promotion.push_str("=R");
+                } else if new_knight_index < 64 {
+                    to_index = new_knight_index;
+                    promotion.push_str("=N");
+                } else if new_bishop_index < 64 {
+                    to_index = new_bishop_index;
+                    promotion.push_str("=B");
+                }
+            }
+
+            let (_, from_file) = Self::rank_file_from_index(from_index);
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            if to_file == from_file {
+                // Pawn move.
+                return Some(format!(
+                    "{}{to_rank}{promotion}{check_suffix}",
+                    Self::file_to_char(to_file),
+                ));
+            } else {
+                // Pawn capture.
+                return Some(format!(
+                    "{}x{}{to_rank}{promotion}{check_suffix}",
+                    Self::file_to_char(from_file),
+                    Self::file_to_char(to_file),
+                ));
+            }
+        };
+
+        let moved_king = self.king[self.active_color] & !after_move.king[self.active_color];
+        if moved_king > 0 {
+            let home_rank_offset = self.active_color.wb(56, 0);
+            if self.can_castle[self.active_color][SIDE_KING]
+                && moved_king.bit_at_index(home_rank_offset + 4)
+                && after_move.king[self.active_color].bit_at_index(home_rank_offset + 6)
+            {
+                // Castling kingside.
+                return Some(String::from("O-O"));
+            }
+            if self.can_castle[self.active_color][SIDE_QUEEN]
+                && moved_king.bit_at_index(home_rank_offset + 4)
+                && after_move.king[self.active_color].bit_at_index(home_rank_offset + 2)
+            {
+                // Castling queenside.
+                return Some(String::from("O-O-O"));
+            }
+            let to_index = after_move.king[self.active_color].leading_zeros();
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
+            if to_index < 64 {
+                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+                return Some(format!(
+                    "K{capture_mark}{}{to_rank}{check_suffix}",
+                    Self::file_to_char(to_file)
+                ));
+            }
+        }
+
+        let moved_rook = self.rooks[self.active_color] & !after_move.rooks[self.active_color];
+        if moved_rook > 0 {
+            let to_index = (after_move.rooks[self.active_color] & !self.rooks[self.active_color])
+                .leading_zeros();
+            let to_mask = u64::from_bit(to_index);
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
+
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            // Create a board which is like the board after the move, only our moved piece is still in
+            // the original spot. That will allow us to calculate sightlines properly.
+            let mut sightlines_board = after_move.clone();
+            sightlines_board.rooks[self.active_color] |= self.rooks[self.active_color];
+
+            let other_rooks = sightlines_board
+                .rooklike_moves_masks(to_mask)
+                .map(|(_, m)| m)
+                .reduce(|a, b| a | b)
+                .unwrap_or(0)
+                & after_move.rooks[self.active_color];
+
+            if other_rooks > 0 {
+                // Two rooks could have moved here; we need to differentiate between them.
+                let from_index = moved_rook.leading_zeros();
+                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                let rooks_on_same_file =
+                    ((other_rooks | moved_rook) & (FILE_0_MASK >> (from_file - 1))).count_ones()
+                        > 1;
+
+                if rooks_on_same_file {
+                    return Some(format!(
+                        "R{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                } else {
+                    return Some(format!(
+                        "R{}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                }
+            }
+
+            return Some(format!(
+                "R{capture_mark}{}{to_rank}{check_suffix}",
+                Self::file_to_char(to_file),
+            ));
+        }
+
+        let moved_knight = self.knights[self.active_color] & !after_move.knights[self.active_color];
+        if moved_knight > 0 {
+            let to_index = (after_move.knights[self.active_color]
+                & !self.knights[self.active_color])
+                .leading_zeros();
+            let to_mask = u64::from_bit(to_index);
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
+
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            let other_knights = after_move
+                .knight_moves_masks(to_mask)
+                .map(|(_, m)| m)
+                .reduce(|a, b| a | b)
+                .unwrap_or(0)
+                & after_move.knights[self.active_color];
+
+            if other_knights > 0 {
+                // Two knights could have moved here; we need to differentiate between them.
+                let from_index = moved_knight.leading_zeros();
+                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                let knights_on_same_file = ((other_knights | moved_knight)
+                    & (FILE_0_MASK >> (from_file - 1)))
+                    .count_ones()
+                    > 1;
+
+                if knights_on_same_file {
+                    return Some(format!(
+                        "N{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                } else {
+                    return Some(format!(
+                        "N{}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                }
+            }
+
+            return Some(format!(
+                "N{capture_mark}{}{to_rank}{check_suffix}",
+                Self::file_to_char(to_file),
+            ));
+        }
+
+        let moved_bishop = self.bishops[self.active_color] & !after_move.bishops[self.active_color];
+        if moved_bishop > 0 {
+            let to_index = (after_move.bishops[self.active_color]
+                & !self.bishops[self.active_color])
+                .leading_zeros();
+            let to_mask = u64::from_bit(to_index);
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
+
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            // Create a board which is like the board after the move, only our moved piece is still in
+            // the original spot. That will allow us to calculate sightlines properly.
+            let mut sightlines_board = after_move.clone();
+            sightlines_board.bishops[self.active_color] |= self.bishops[self.active_color];
+
+            let other_bishops = sightlines_board
+                .bishoplike_moves_masks(to_mask)
+                .map(|(_, m)| m)
+                .reduce(|a, b| a | b)
+                .unwrap_or(0)
+                & after_move.bishops[self.active_color];
+
+            if other_bishops > 0 {
+                // Two bishops could have moved here; we need to differentiate between them.
+                let from_index = moved_bishop.leading_zeros();
+                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                let bishops_on_same_file = ((other_bishops | moved_bishop)
+                    & (FILE_0_MASK >> (from_file - 1)))
+                    .count_ones()
+                    > 1;
+
+                if bishops_on_same_file {
+                    return Some(format!(
+                        "B{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                } else {
+                    return Some(format!(
+                        "B{}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                }
+            }
+
+            return Some(format!(
+                "B{capture_mark}{}{to_rank}{check_suffix}",
+                Self::file_to_char(to_file),
+            ));
+        }
+
+        let moved_queen = self.queens[self.active_color] & !after_move.queens[self.active_color];
+        if moved_queen > 0 {
+            let to_index = (after_move.queens[self.active_color] & !self.queens[self.active_color])
+                .leading_zeros();
+            let to_mask = u64::from_bit(to_index);
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
+
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            // Create a board which is like the board after the move, only our moved piece is still in
+            // the original spot. That will allow us to calculate sightlines properly.
+            let mut sightlines_board = after_move.clone();
+            sightlines_board.queens[self.active_color] |= self.queens[self.active_color];
+
+            let other_queens = (sightlines_board
+                .rooklike_moves_masks(to_mask)
+                .map(|(_, m)| m)
+                .reduce(|a, b| a | b)
+                .unwrap_or(0)
+                | sightlines_board
+                    .bishoplike_moves_masks(to_mask)
+                    .map(|(_, m)| m)
+                    .reduce(|a, b| a | b)
+                    .unwrap_or(0))
+                & after_move.queens[self.active_color];
+
+            if other_queens > 0 {
+                // Two queens could have moved here; we need to differentiate between them.
+                let from_index = moved_queen.leading_zeros();
+                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                let queens_on_same_file =
+                    ((other_queens | moved_queen) & (FILE_0_MASK >> (from_file - 1))).count_ones()
+                        > 1;
+
+                if queens_on_same_file {
+                    return Some(format!(
+                        "Q{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                } else {
+                    return Some(format!(
+                        "Q{}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                }
+            }
+
+            return Some(format!(
+                "Q{capture_mark}{}{to_rank}{check_suffix}",
+                Self::file_to_char(to_file),
+            ));
+        }
+
+        None
+    }
+
     fn apply_mutation<F>(&self, f: F) -> Board
     where
         F: FnOnce(&mut Board),
@@ -754,93 +1170,6 @@ impl Board {
             | self.king[color]
     }
 
-    pub fn to_fen(&self) -> String {
-        let occupancy = self.occupancy_bits();
-        let mut output = String::with_capacity(90);
-        for rank in (1..=8).rev() {
-            let occupancy = (occupancy >> (8 * (rank - 1))) as u8;
-            let mut offset: u32 = 0;
-            while offset < 8 {
-                let remaining_occupancy = occupancy << offset;
-                let empty_squares = remaining_occupancy.leading_zeros();
-                if empty_squares > 0 {
-                    if remaining_occupancy == 0 {
-                        output.push_str(&(8 - offset).to_string());
-                    } else {
-                        output.push_str(&empty_squares.to_string());
-                    }
-                    offset += empty_squares;
-                } else {
-                    output.push(self.square_occupant_to_char(Self::index_from_rank_file(
-                        rank as u32,
-                        offset + 1,
-                    )));
-                    offset += 1;
-                }
-            }
-            if rank > 1 {
-                output.push('/');
-            }
-        }
-        output.push_str(self.active_color.wb(" w", " b"));
-
-        let mut can_castle = false;
-        output.push(' ');
-        if self.can_castle[COLOR_WHITE][SIDE_KING] {
-            output.push('K');
-            can_castle = true;
-        }
-        if self.can_castle[COLOR_WHITE][SIDE_QUEEN] {
-            output.push('Q');
-            can_castle = true;
-        }
-        if self.can_castle[COLOR_BLACK][SIDE_KING] {
-            output.push('k');
-            can_castle = true;
-        }
-        if self.can_castle[COLOR_BLACK][SIDE_QUEEN] {
-            output.push('q');
-            can_castle = true;
-        }
-        if !can_castle {
-            output.push('-');
-        }
-        output.push(' ');
-        if let Some(square) = self.en_passant_square {
-            output.push_str(&Self::coords_to_string(square));
-        } else {
-            output.push('-');
-        }
-        output.push(' ');
-        output.push_str(&self.halfmove_clock.to_string());
-        output.push(' ');
-        output.push_str(&self.fullmove_number.to_string());
-
-        output
-    }
-
-    pub fn to_readable_board(&self) -> String {
-        let mut output = String::with_capacity(270);
-        output.push('\n');
-
-        for rank in (1..=8).rev() {
-            output.push_str(&rank.to_string());
-            for file in 1..=8 {
-                output.push(' ');
-                output.push(self.square_occupant_to_char(Self::index_from_rank_file(rank, file)));
-            }
-            output.push('\n');
-        }
-        output.push(' ');
-        for file in 1..=8 {
-            output.push(' ');
-            output.push(Self::file_to_char(file));
-        }
-        output.push('\n');
-        output.push_str(&self.to_fen());
-        output
-    }
-
     fn check_state(&self) -> Check {
         if self.king[self.active_color] > 0 && self.mask_is_attacked(self.king[self.active_color]) {
             let mut next_boards: Vec<Board> = self.next_boards();
@@ -860,335 +1189,6 @@ impl Board {
         } else {
             Check::None
         }
-    }
-
-    pub fn move_as_string(&self, after_move: &Board) -> Option<String> {
-        let opponent_color = self.active_color.opponent();
-        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
-
-        let moved_pawns = self.pawns[self.active_color] & !after_move.pawns[self.active_color];
-        let check_suffix = match after_move.check_state() {
-            Check::None => "",
-            Check::Check => "+",
-            Check::Checkmate => "#",
-        };
-        if moved_pawns > 0 {
-            let from_index = moved_pawns.leading_zeros();
-            let mut to_index = (after_move.pawns[self.active_color]
-                & !self.pawns[self.active_color])
-                .leading_zeros();
-
-            let mut promotion = String::with_capacity(2);
-
-            if to_index == 64 {
-                // Pawn promotion.
-                let new_queen_index = (after_move.queens[self.active_color]
-                    & !self.queens[self.active_color])
-                    .leading_zeros();
-
-                let new_rook_index = (after_move.rooks[self.active_color]
-                    & !self.rooks[self.active_color])
-                    .leading_zeros();
-
-                let new_knight_index = (after_move.knights[self.active_color]
-                    & !self.knights[self.active_color])
-                    .leading_zeros();
-
-                let new_bishop_index = (after_move.bishops[self.active_color]
-                    & !self.bishops[self.active_color])
-                    .leading_zeros();
-
-                if new_queen_index < 64 {
-                    to_index = new_queen_index;
-                    promotion.push_str("=Q");
-                } else if new_rook_index < 64 {
-                    to_index = new_rook_index;
-                    promotion.push_str("=R");
-                } else if new_knight_index < 64 {
-                    to_index = new_knight_index;
-                    promotion.push_str("=N");
-                } else if new_bishop_index < 64 {
-                    to_index = new_bishop_index;
-                    promotion.push_str("=B");
-                }
-            }
-
-            let (_, from_file) = Self::rank_file_from_index(from_index);
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            if to_file == from_file {
-                // Pawn move.
-                return Some(format!(
-                    "{}{to_rank}{promotion}{check_suffix}",
-                    Self::file_to_char(to_file),
-                ));
-            } else {
-                // Pawn capture.
-                return Some(format!(
-                    "{}x{}{to_rank}{promotion}{check_suffix}",
-                    Self::file_to_char(from_file),
-                    Self::file_to_char(to_file),
-                ));
-            }
-        };
-
-        let moved_king = self.king[self.active_color] & !after_move.king[self.active_color];
-        if moved_king > 0 {
-            let home_rank_offset = self.active_color.wb(56, 0);
-            if self.can_castle[self.active_color][SIDE_KING]
-                && moved_king.bit_at_index(home_rank_offset + 4)
-                && after_move.king[self.active_color].bit_at_index(home_rank_offset + 6)
-            {
-                // Castling kingside.
-                return Some(String::from("O-O"));
-            }
-            if self.can_castle[self.active_color][SIDE_QUEEN]
-                && moved_king.bit_at_index(home_rank_offset + 4)
-                && after_move.king[self.active_color].bit_at_index(home_rank_offset + 2)
-            {
-                // Castling queenside.
-                return Some(String::from("O-O-O"));
-            }
-            let to_index = after_move.king[self.active_color].leading_zeros();
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-            if to_index < 64 {
-                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-                return Some(format!(
-                    "K{capture_mark}{}{to_rank}{check_suffix}",
-                    Self::file_to_char(to_file)
-                ));
-            }
-        }
-
-        let moved_rook = self.rooks[self.active_color] & !after_move.rooks[self.active_color];
-        if moved_rook > 0 {
-            let to_index = (after_move.rooks[self.active_color] & !self.rooks[self.active_color])
-                .leading_zeros();
-            let to_mask = u64::from_bit(to_index);
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            // Create a board which is like the board after the move, only our moved piece is still in
-            // the original spot. That will allow us to calculate sightlines properly.
-            let mut sightlines_board = after_move.clone();
-            sightlines_board.rooks[self.active_color] |= self.rooks[self.active_color];
-
-            let other_rooks = sightlines_board
-                .rooklike_moves_masks(to_mask)
-                .map(|(_, m)| m)
-                .reduce(|a, b| a | b)
-                .unwrap_or(0)
-                & after_move.rooks[self.active_color];
-
-            if other_rooks > 0 {
-                // Two rooks could have moved here; we need to differentiate between them.
-                let from_index = moved_rook.leading_zeros();
-                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
-
-                let rooks_on_same_file =
-                    ((other_rooks | moved_rook) & (FILE_0_MASK >> (from_file - 1))).count_ones()
-                        > 1;
-
-                if rooks_on_same_file {
-                    return Some(format!(
-                        "R{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                } else {
-                    return Some(format!(
-                        "R{}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                }
-            }
-
-            return Some(format!(
-                "R{capture_mark}{}{to_rank}{check_suffix}",
-                Self::file_to_char(to_file),
-            ));
-        }
-
-        let moved_knight = self.knights[self.active_color] & !after_move.knights[self.active_color];
-        if moved_knight > 0 {
-            let to_index = (after_move.knights[self.active_color]
-                & !self.knights[self.active_color])
-                .leading_zeros();
-            let to_mask = u64::from_bit(to_index);
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            let other_knights = after_move
-                .knight_moves_masks(to_mask)
-                .map(|(_, m)| m)
-                .reduce(|a, b| a | b)
-                .unwrap_or(0)
-                & after_move.knights[self.active_color];
-
-            if other_knights > 0 {
-                // Two knights could have moved here; we need to differentiate between them.
-                let from_index = moved_knight.leading_zeros();
-                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
-
-                let knights_on_same_file = ((other_knights | moved_knight)
-                    & (FILE_0_MASK >> (from_file - 1)))
-                    .count_ones()
-                    > 1;
-
-                if knights_on_same_file {
-                    return Some(format!(
-                        "N{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                } else {
-                    return Some(format!(
-                        "N{}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                }
-            }
-
-            return Some(format!(
-                "N{capture_mark}{}{to_rank}{check_suffix}",
-                Self::file_to_char(to_file),
-            ));
-        }
-
-        let moved_bishop = self.bishops[self.active_color] & !after_move.bishops[self.active_color];
-        if moved_bishop > 0 {
-            let to_index = (after_move.bishops[self.active_color]
-                & !self.bishops[self.active_color])
-                .leading_zeros();
-            let to_mask = u64::from_bit(to_index);
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            // Create a board which is like the board after the move, only our moved piece is still in
-            // the original spot. That will allow us to calculate sightlines properly.
-            let mut sightlines_board = after_move.clone();
-            sightlines_board.bishops[self.active_color] |= self.bishops[self.active_color];
-
-            let other_bishops = sightlines_board
-                .bishoplike_moves_masks(to_mask)
-                .map(|(_, m)| m)
-                .reduce(|a, b| a | b)
-                .unwrap_or(0)
-                & after_move.bishops[self.active_color];
-
-            if other_bishops > 0 {
-                // Two bishops could have moved here; we need to differentiate between them.
-                let from_index = moved_bishop.leading_zeros();
-                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
-
-                let bishops_on_same_file = ((other_bishops | moved_bishop)
-                    & (FILE_0_MASK >> (from_file - 1)))
-                    .count_ones()
-                    > 1;
-
-                if bishops_on_same_file {
-                    return Some(format!(
-                        "B{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                } else {
-                    return Some(format!(
-                        "B{}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                }
-            }
-
-            return Some(format!(
-                "B{capture_mark}{}{to_rank}{check_suffix}",
-                Self::file_to_char(to_file),
-            ));
-        }
-
-        let moved_queen = self.queens[self.active_color] & !after_move.queens[self.active_color];
-        if moved_queen > 0 {
-            let to_index = (after_move.queens[self.active_color] & !self.queens[self.active_color])
-                .leading_zeros();
-            let to_mask = u64::from_bit(to_index);
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            // Create a board which is like the board after the move, only our moved piece is still in
-            // the original spot. That will allow us to calculate sightlines properly.
-            let mut sightlines_board = after_move.clone();
-            sightlines_board.queens[self.active_color] |= self.queens[self.active_color];
-
-            let other_queens = (sightlines_board
-                .rooklike_moves_masks(to_mask)
-                .map(|(_, m)| m)
-                .reduce(|a, b| a | b)
-                .unwrap_or(0)
-                | sightlines_board
-                    .bishoplike_moves_masks(to_mask)
-                    .map(|(_, m)| m)
-                    .reduce(|a, b| a | b)
-                    .unwrap_or(0))
-                & after_move.queens[self.active_color];
-
-            if other_queens > 0 {
-                // Two queens could have moved here; we need to differentiate between them.
-                let from_index = moved_queen.leading_zeros();
-                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
-
-                let queens_on_same_file =
-                    ((other_queens | moved_queen) & (FILE_0_MASK >> (from_file - 1))).count_ones()
-                        > 1;
-
-                if queens_on_same_file {
-                    return Some(format!(
-                        "Q{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                } else {
-                    return Some(format!(
-                        "Q{}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                }
-            }
-
-            return Some(format!(
-                "Q{capture_mark}{}{to_rank}{check_suffix}",
-                Self::file_to_char(to_file),
-            ));
-        }
-
-        None
     }
 
     fn square_occupant_to_char(&self, index: u32) -> char {
