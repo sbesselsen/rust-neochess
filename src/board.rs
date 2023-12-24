@@ -12,6 +12,12 @@ pub const FILE_0_MASK: u64 = 0x8080808080808080;
 pub const DIAG_TL_MASK: u64 = 0x8040201008040201;
 pub const DIAG_TR_MASK: u64 = 0x0102040810204080;
 
+enum Check {
+    None,
+    Check,
+    Checkmate,
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Board {
     // Board definition
@@ -841,6 +847,126 @@ impl Board {
         output
     }
 
+    fn check_state(&self) -> Check {
+        if self.king[self.active_color] > 0 && self.mask_is_attacked(self.king[self.active_color]) {
+            let mut next_boards: Vec<Board> = self.next_boards();
+            let mut is_checkmate = true;
+            for b in next_boards.iter_mut() {
+                b.active_color = self.active_color;
+                if !b.mask_is_attacked(b.king[self.active_color]) {
+                    is_checkmate = false;
+                    break;
+                }
+            }
+            for b in next_boards {
+                println!("{b:?}");
+            }
+            if is_checkmate {
+                Check::Checkmate
+            } else {
+                Check::Check
+            }
+        } else {
+            Check::None
+        }
+    }
+
+    pub fn move_as_string(&self, after_move: &Board) -> Option<String> {
+        let moved_pawns = self.pawns[self.active_color] & !after_move.pawns[self.active_color];
+        let check_suffix = match after_move.check_state() {
+            Check::None => "",
+            Check::Check => "+",
+            Check::Checkmate => "#",
+        };
+        if moved_pawns > 0 {
+            let from_index = moved_pawns.leading_zeros();
+            let mut to_index = (after_move.pawns[self.active_color]
+                & !self.pawns[self.active_color])
+                .leading_zeros();
+
+            let mut promotion = String::with_capacity(2);
+
+            if to_index == 64 {
+                // Pawn promotion.
+                let new_queen_index = (after_move.queens[self.active_color]
+                    & !self.queens[self.active_color])
+                    .leading_zeros();
+
+                let new_rook_index = (after_move.rooks[self.active_color]
+                    & !self.rooks[self.active_color])
+                    .leading_zeros();
+
+                let new_knight_index = (after_move.knights[self.active_color]
+                    & !self.knights[self.active_color])
+                    .leading_zeros();
+
+                let new_bishop_index = (after_move.bishops[self.active_color]
+                    & !self.bishops[self.active_color])
+                    .leading_zeros();
+
+                if new_queen_index < 64 {
+                    to_index = new_queen_index;
+                    promotion.push_str("=Q");
+                } else if new_rook_index < 64 {
+                    to_index = new_rook_index;
+                    promotion.push_str("=R");
+                } else if new_knight_index < 64 {
+                    to_index = new_knight_index;
+                    promotion.push_str("=N");
+                } else if new_bishop_index < 64 {
+                    to_index = new_bishop_index;
+                    promotion.push_str("=B");
+                }
+            }
+
+            let (_, from_file) = Self::rank_file_from_index(from_index);
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            if to_file == from_file {
+                // Pawn move.
+                return Some(format!(
+                    "{}{to_rank}{promotion}{check_suffix}",
+                    Self::file_to_char(to_file),
+                ));
+            } else {
+                // Pawn capture.
+                return Some(format!(
+                    "{}x{}{to_rank}{promotion}{check_suffix}",
+                    Self::file_to_char(from_file),
+                    Self::file_to_char(to_file),
+                ));
+            }
+        };
+
+        let moved_king = self.king[self.active_color] & !after_move.king[self.active_color];
+        if moved_king > 0 {
+            let home_rank_offset = self.active_color.wb(56, 0);
+            if self.can_castle[self.active_color][SIDE_KING]
+                && moved_king.bit_at_index(home_rank_offset + 4)
+                && after_move.king[self.active_color].bit_at_index(home_rank_offset + 6)
+            {
+                // Castling kingside.
+                return Some(String::from("O-O"));
+            }
+            if self.can_castle[self.active_color][SIDE_QUEEN]
+                && moved_king.bit_at_index(home_rank_offset + 4)
+                && after_move.king[self.active_color].bit_at_index(home_rank_offset + 2)
+            {
+                // Castling queenside.
+                return Some(String::from("O-O-O"));
+            }
+            let to_index = after_move.king[self.active_color].leading_zeros();
+            if to_index < 64 {
+                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+                return Some(format!("K{}{to_rank}", Self::file_to_char(to_file)));
+            }
+        }
+
+        // TODO
+
+        None
+    }
+
     fn square_occupant_to_char(&self, index: u32) -> char {
         if self.pawns[COLOR_BLACK].bit_at_index(index) {
             'p'
@@ -912,7 +1038,10 @@ impl Debug for Board {
 mod tests {
     use std::{collections::VecDeque, time::Instant};
 
-    use crate::board::{Board, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK};
+    use crate::{
+        bitwise_helper::BitwiseHelper,
+        board::{Board, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK},
+    };
 
     #[test]
     fn empty_board_works() {
@@ -1168,6 +1297,116 @@ mod tests {
         let board =
             Board::try_parse_fen("3K3N/3bRp1r/B5p1/4p2N/1B5R/5pP1/P1k5/8 w - - 0 1").unwrap();
         assert_eq!(board.local_eval(), 12.0);
+    }
+
+    #[test]
+    fn pawn_move_notation() {
+        let board =
+            Board::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1").unwrap();
+
+        let mut board2 = board.clone();
+        board2.pawns[COLOR_WHITE].move_bit(25, 17);
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("b6")));
+
+        let mut board2 = board.clone();
+        board2.pawns[COLOR_WHITE].move_bit(25, 18);
+        board2.rooks[COLOR_BLACK].set_bit(18, false);
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("bxc6")));
+
+        let board =
+            Board::try_parse_fen("2b1K3/B2P2k1/2r2pnn/1P2P2B/5pPq/4R3/3p1R2/8 b - - 0 1").unwrap();
+
+        let mut board2 = board.clone();
+        board2.pawns[COLOR_BLACK].move_bit(37, 44);
+        board2.rooks[COLOR_WHITE].set_bit(44, false);
+        board2.active_color = COLOR_WHITE;
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("fxe3")));
+
+        let board =
+            Board::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1").unwrap();
+
+        let mut board2 = board.clone();
+        board2.pawns[COLOR_WHITE].set_bit(11, false);
+        board2.queens[COLOR_WHITE].set_bit(2, true);
+        board2.bishops[COLOR_BLACK].set_bit(2, false);
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("dxc8=Q")));
+
+        let board =
+            Board::try_parse_fen("rnbqkbnr/pppppppp/2P5/8/8/8/PP1PPPPP/RNBQKBNR w KQkq - 0 1")
+                .unwrap();
+
+        let mut board2 = board.clone();
+        board2.pawns[COLOR_WHITE].move_bit(18, 11);
+        board2.pawns[COLOR_BLACK].set_bit(11, false);
+        board2.active_color = COLOR_BLACK;
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("cxd7+")));
+
+        let board =
+            Board::try_parse_fen("r2bkbnr/pppppppp/2P5/8/8/4P3/PP2PPPP/RNBQKBNR w KQkq - 0 1")
+                .unwrap();
+
+        let mut board2 = board.clone();
+        board2.pawns[COLOR_WHITE].move_bit(18, 11);
+        board2.pawns[COLOR_BLACK].set_bit(11, false);
+        board2.active_color = COLOR_BLACK;
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("cxd7#")));
+    }
+
+    #[test]
+    fn king_move_notation() {
+        let board = Board::try_parse_fen(
+            "r3k2r/1pp1bppp/p1np1n2/4p1q1/2BP2b1/1PN1PN1P/PBP1QPP1/R3K2R w KQkq - 0 1",
+        )
+        .unwrap();
+
+        let mut board2 = board.clone();
+        board2.rooks[COLOR_WHITE].move_bit(63, 61);
+        board2.king[COLOR_WHITE].move_bit(60, 62);
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("O-O")));
+
+        let mut board2 = board.clone();
+        board2.rooks[COLOR_WHITE].move_bit(56, 59);
+        board2.king[COLOR_WHITE].move_bit(60, 58);
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("O-O-O")));
+
+        let mut board2 = board.clone();
+        board2.king[COLOR_WHITE].move_bit(60, 61);
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Kf1")));
+
+        let mut board = board.clone();
+        board.active_color = COLOR_BLACK;
+
+        let mut board2 = board.clone();
+        board2.king[COLOR_BLACK].move_bit(4, 6);
+        board2.rooks[COLOR_BLACK].move_bit(7, 5);
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("O-O")));
+
+        let mut board2 = board.clone();
+        board2.king[COLOR_BLACK].move_bit(4, 2);
+        board2.rooks[COLOR_BLACK].move_bit(0, 3);
+
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("O-O-O")));
     }
 
     #[test]
