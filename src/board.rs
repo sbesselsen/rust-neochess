@@ -976,13 +976,12 @@ impl Board {
 
             if other_rooks > 0 {
                 // Two rooks could have moved here; we need to differentiate between them.
-                let from_mask =
-                    self.rooks[self.active_color] & !after_move.rooks[self.active_color];
-                let from_index = from_mask.leading_zeros();
+                let from_index = moved_rook.leading_zeros();
                 let (from_rank, from_file) = Self::rank_file_from_index(from_index);
 
                 let rooks_on_same_file =
-                    ((other_rooks | from_mask) & (FILE_0_MASK >> (to_file - 1))).count_ones() > 1;
+                    ((other_rooks | moved_rook) & (FILE_0_MASK >> (from_file - 1))).count_ones()
+                        > 1;
 
                 if rooks_on_same_file {
                     return Some(format!(
@@ -1001,6 +1000,53 @@ impl Board {
 
             return Some(format!(
                 "R{}{to_rank}{check_suffix}",
+                Self::file_to_char(to_file),
+            ));
+        }
+
+        let moved_knight = self.knights[self.active_color] & !after_move.knights[self.active_color];
+        if moved_knight > 0 {
+            let to_index = (after_move.knights[self.active_color]
+                & !self.knights[self.active_color])
+                .leading_zeros();
+            let to_mask = u64::from_bit(to_index);
+
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            let other_knights = after_move
+                .knight_moves_masks(to_mask)
+                .map(|(_, m)| m)
+                .reduce(|a, b| a | b)
+                .unwrap_or(0)
+                & after_move.knights[self.active_color];
+
+            if other_knights > 0 {
+                // Two knights could have moved here; we need to differentiate between them.
+                let from_index = moved_knight.leading_zeros();
+                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                let knights_on_same_file = ((other_knights | moved_knight)
+                    & (FILE_0_MASK >> (from_file - 1)))
+                    .count_ones()
+                    > 1;
+
+                if knights_on_same_file {
+                    return Some(format!(
+                        "N{}{from_rank}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                } else {
+                    return Some(format!(
+                        "N{}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                }
+            }
+
+            return Some(format!(
+                "N{}{to_rank}{check_suffix}",
                 Self::file_to_char(to_file),
             ));
         }
@@ -1473,6 +1519,30 @@ mod tests {
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Rh7h5")));
+    }
+
+    #[test]
+    fn knight_move_notation() {
+        let board =
+            Board::try_parse_fen("R3R3/1k5p/5PP1/3qP3/n5K1/1P2PN1N/p1r3B1/5N2 w - - 0 1").unwrap();
+
+        let board2 = board.apply_move(|b| {
+            b.knights[COLOR_WHITE].move_bit(45, 35);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Nd4")));
+
+        let board2 = board.apply_move(|b| {
+            b.knights[COLOR_WHITE].move_bit(45, 51);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Nf3d2")));
+
+        let board2 = board.apply_move(|b| {
+            b.knights[COLOR_WHITE].move_bit(45, 62);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Nfg1")));
     }
 
     #[test]
