@@ -869,6 +869,9 @@ impl Board {
     }
 
     pub fn move_as_string(&self, after_move: &Board) -> Option<String> {
+        let opponent_color = Self::opponent_color(self.active_color);
+        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+
         let moved_pawns = self.pawns[self.active_color] & !after_move.pawns[self.active_color];
         let check_suffix = match after_move.check_state() {
             Check::None => "",
@@ -953,9 +956,17 @@ impl Board {
                 return Some(String::from("O-O-O"));
             }
             let to_index = after_move.king[self.active_color].leading_zeros();
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
             if to_index < 64 {
                 let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-                return Some(format!("K{}{to_rank}", Self::file_to_char(to_file)));
+                return Some(format!(
+                    "K{capture_mark}{}{to_rank}",
+                    Self::file_to_char(to_file)
+                ));
             }
         }
 
@@ -964,10 +975,20 @@ impl Board {
             let to_index = (after_move.rooks[self.active_color] & !self.rooks[self.active_color])
                 .leading_zeros();
             let to_mask = u64::from_bit(to_index);
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
 
             let (to_rank, to_file) = Self::rank_file_from_index(to_index);
 
-            let other_rooks = after_move
+            // Create a board which is like the board after the move, only our moved piece is still in
+            // the original spot. That will allow us to calculate sightlines properly.
+            let mut sightlines_board = after_move.clone();
+            sightlines_board.rooks[self.active_color] |= self.rooks[self.active_color];
+
+            let other_rooks = sightlines_board
                 .rooklike_moves_masks(to_mask)
                 .map(|(_, m)| m)
                 .reduce(|a, b| a | b)
@@ -985,13 +1006,13 @@ impl Board {
 
                 if rooks_on_same_file {
                     return Some(format!(
-                        "R{}{from_rank}{}{to_rank}{check_suffix}",
+                        "R{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
                         Self::file_to_char(from_file),
                         Self::file_to_char(to_file),
                     ));
                 } else {
                     return Some(format!(
-                        "R{}{}{to_rank}{check_suffix}",
+                        "R{}{capture_mark}{}{to_rank}{check_suffix}",
                         Self::file_to_char(from_file),
                         Self::file_to_char(to_file),
                     ));
@@ -999,7 +1020,7 @@ impl Board {
             }
 
             return Some(format!(
-                "R{}{to_rank}{check_suffix}",
+                "R{capture_mark}{}{to_rank}{check_suffix}",
                 Self::file_to_char(to_file),
             ));
         }
@@ -1010,6 +1031,11 @@ impl Board {
                 & !self.knights[self.active_color])
                 .leading_zeros();
             let to_mask = u64::from_bit(to_index);
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
 
             let (to_rank, to_file) = Self::rank_file_from_index(to_index);
 
@@ -1032,13 +1058,13 @@ impl Board {
 
                 if knights_on_same_file {
                     return Some(format!(
-                        "N{}{from_rank}{}{to_rank}{check_suffix}",
+                        "N{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
                         Self::file_to_char(from_file),
                         Self::file_to_char(to_file),
                     ));
                 } else {
                     return Some(format!(
-                        "N{}{}{to_rank}{check_suffix}",
+                        "N{}{capture_mark}{}{to_rank}{check_suffix}",
                         Self::file_to_char(from_file),
                         Self::file_to_char(to_file),
                     ));
@@ -1046,7 +1072,7 @@ impl Board {
             }
 
             return Some(format!(
-                "N{}{to_rank}{check_suffix}",
+                "N{capture_mark}{}{to_rank}{check_suffix}",
                 Self::file_to_char(to_file),
             ));
         }
@@ -1057,10 +1083,20 @@ impl Board {
                 & !self.bishops[self.active_color])
                 .leading_zeros();
             let to_mask = u64::from_bit(to_index);
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
 
             let (to_rank, to_file) = Self::rank_file_from_index(to_index);
 
-            let other_bishops = after_move
+            // Create a board which is like the board after the move, only our moved piece is still in
+            // the original spot. That will allow us to calculate sightlines properly.
+            let mut sightlines_board = after_move.clone();
+            sightlines_board.bishops[self.active_color] |= self.bishops[self.active_color];
+
+            let other_bishops = sightlines_board
                 .bishoplike_moves_masks(to_mask)
                 .map(|(_, m)| m)
                 .reduce(|a, b| a | b)
@@ -1079,13 +1115,13 @@ impl Board {
 
                 if bishops_on_same_file {
                     return Some(format!(
-                        "B{}{from_rank}{}{to_rank}{check_suffix}",
+                        "B{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
                         Self::file_to_char(from_file),
                         Self::file_to_char(to_file),
                     ));
                 } else {
                     return Some(format!(
-                        "B{}{}{to_rank}{check_suffix}",
+                        "B{}{capture_mark}{}{to_rank}{check_suffix}",
                         Self::file_to_char(from_file),
                         Self::file_to_char(to_file),
                     ));
@@ -1093,12 +1129,70 @@ impl Board {
             }
 
             return Some(format!(
-                "B{}{to_rank}{check_suffix}",
+                "B{capture_mark}{}{to_rank}{check_suffix}",
                 Self::file_to_char(to_file),
             ));
         }
 
-        // TODO
+        let moved_queen = self.queens[self.active_color] & !after_move.queens[self.active_color];
+        if moved_queen > 0 {
+            let to_index = (after_move.queens[self.active_color] & !self.queens[self.active_color])
+                .leading_zeros();
+            let to_mask = u64::from_bit(to_index);
+            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
+                "x"
+            } else {
+                ""
+            };
+
+            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+            // Create a board which is like the board after the move, only our moved piece is still in
+            // the original spot. That will allow us to calculate sightlines properly.
+            let mut sightlines_board = after_move.clone();
+            sightlines_board.queens[self.active_color] |= self.queens[self.active_color];
+
+            let other_queens = (sightlines_board
+                .rooklike_moves_masks(to_mask)
+                .map(|(_, m)| m)
+                .reduce(|a, b| a | b)
+                .unwrap_or(0)
+                | sightlines_board
+                    .bishoplike_moves_masks(to_mask)
+                    .map(|(_, m)| m)
+                    .reduce(|a, b| a | b)
+                    .unwrap_or(0))
+                & after_move.queens[self.active_color];
+
+            if other_queens > 0 {
+                // Two queens could have moved here; we need to differentiate between them.
+                let from_index = moved_queen.leading_zeros();
+                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                let queens_on_same_file =
+                    ((other_queens | moved_queen) & (FILE_0_MASK >> (from_file - 1))).count_ones()
+                        > 1;
+
+                if queens_on_same_file {
+                    return Some(format!(
+                        "Q{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                } else {
+                    return Some(format!(
+                        "Q{}{capture_mark}{}{to_rank}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                }
+            }
+
+            return Some(format!(
+                "Q{capture_mark}{}{to_rank}{check_suffix}",
+                Self::file_to_char(to_file),
+            ));
+        }
 
         None
     }
@@ -1614,6 +1708,30 @@ mod tests {
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Ba2b3")));
+    }
+
+    #[test]
+    fn queen_move_notation() {
+        let board =
+            Board::try_parse_fen("3Nbk2/1pP5/4B2K/PN2B3/3Q3p/1q1qrP2/p7/3q4 b - - 0 1").unwrap();
+
+        let board2 = board.apply_move(|b| {
+            b.queens[COLOR_BLACK].move_bit(43, 35);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Qxd4")));
+
+        let board2 = board.apply_move(|b| {
+            b.queens[COLOR_BLACK].move_bit(43, 50);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Qd3c2")));
+
+        let board2 = board.apply_move(|b| {
+            b.queens[COLOR_BLACK].move_bit(41, 34);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Qbc4")));
     }
 
     #[test]
