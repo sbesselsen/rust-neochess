@@ -6,11 +6,11 @@ pub const COLOR_BLACK: usize = 1;
 pub const SIDE_QUEEN: usize = 0;
 pub const SIDE_KING: usize = 1;
 
-pub const ALL_MASK: u64 = 0xFFFFFFFFFFFFFFFF;
-pub const RANK_0_MASK: u64 = 0x00000000000000FF;
-pub const FILE_0_MASK: u64 = 0x8080808080808080;
-pub const DIAG_TL_MASK: u64 = 0x8040201008040201;
-pub const DIAG_TR_MASK: u64 = 0x0102040810204080;
+const ALL_MASK: u64 = 0xFFFFFFFFFFFFFFFF;
+const RANK_0_MASK: u64 = 0x00000000000000FF;
+const FILE_0_MASK: u64 = 0x8080808080808080;
+const DIAG_TL_MASK: u64 = 0x8040201008040201;
+const DIAG_TR_MASK: u64 = 0x0102040810204080;
 
 enum Check {
     None,
@@ -73,6 +73,15 @@ impl ColorDecide for usize {
     }
 }
 
+pub struct PieceCount {
+    pub pawns: u32,
+    pub rooks: u32,
+    pub knights: u32,
+    pub bishops: u32,
+    pub queens: u32,
+    pub kings: u32,
+}
+
 impl Board {
     pub fn new() -> Board {
         Board {
@@ -103,19 +112,19 @@ impl Board {
         }
     }
 
-    pub fn local_eval(&self) -> f64 {
-        // TODO:
-        self.local_eval_color(COLOR_WHITE) - self.local_eval_color(COLOR_BLACK)
-    }
-
-    fn local_eval_color(&self, color: usize) -> f64 {
-        // TODO: deduct 0.5 for every doubled, blocked or isolated pawn
-        200.0 * self.king[color].count_ones() as f64
-            + 1.0 * self.pawns[color].count_ones() as f64
-            + 5.0 * self.rooks[color].count_ones() as f64
-            + 3.0 * self.knights[color].count_ones() as f64
-            + 3.0 * self.bishops[color].count_ones() as f64
-            + 9.0 * self.queens[color].count_ones() as f64
+    pub fn count_pieces(&self, color: usize) -> PieceCount {
+        assert!(
+            color == COLOR_WHITE || color == COLOR_BLACK,
+            "color must be COLOR_WHITE or COLOR_BLACK"
+        );
+        PieceCount {
+            pawns: self.pawns[color].count_ones(),
+            rooks: self.rooks[color].count_ones(),
+            knights: self.knights[color].count_ones(),
+            bishops: self.bishops[color].count_ones(),
+            queens: self.queens[color].count_ones(),
+            kings: self.king[color].count_ones(),
+        }
     }
 
     pub fn try_parse_fen(fen: &str) -> Result<Board, FenParseError> {
@@ -1520,13 +1529,23 @@ mod tests {
     }
 
     #[test]
-    fn local_eval() {
+    fn piece_count() {
         let board = Board::try_parse_fen("1R6/2p4n/2k3pr/R6p/P7/3P2PN/nK3Pp1/8 b - - 0 1").unwrap();
-        assert_eq!(board.local_eval(), 2.0);
+        let piece_count = board.count_pieces(COLOR_WHITE);
+        assert_eq!(piece_count.pawns, 4);
+        assert_eq!(piece_count.rooks, 2);
+        assert_eq!(piece_count.knights, 1);
+        assert_eq!(piece_count.bishops, 0);
+        assert_eq!(piece_count.queens, 0);
+        assert_eq!(piece_count.kings, 1);
 
-        let board =
-            Board::try_parse_fen("3K3N/3bRp1r/B5p1/4p2N/1B5R/5pP1/P1k5/8 w - - 0 1").unwrap();
-        assert_eq!(board.local_eval(), 12.0);
+        let piece_count = board.count_pieces(COLOR_BLACK);
+        assert_eq!(piece_count.pawns, 4);
+        assert_eq!(piece_count.rooks, 1);
+        assert_eq!(piece_count.knights, 2);
+        assert_eq!(piece_count.bishops, 0);
+        assert_eq!(piece_count.queens, 0);
+        assert_eq!(piece_count.kings, 1);
     }
 
     #[test]
