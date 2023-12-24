@@ -964,7 +964,7 @@ impl Board {
             if to_index < 64 {
                 let (to_rank, to_file) = Self::rank_file_from_index(to_index);
                 return Some(format!(
-                    "K{capture_mark}{}{to_rank}",
+                    "K{capture_mark}{}{to_rank}{check_suffix}",
                     Self::file_to_char(to_file)
                 ));
             }
@@ -1634,6 +1634,15 @@ mod tests {
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("O-O-O")));
+
+        let board =
+            Board::try_parse_fen("6K1/q7/P3k2P/N1r1P2P/b2R1p2/3p3N/b1b1B1p1/8 b - - 0 1").unwrap();
+        let board2 = board.apply_move(|b| {
+            b.king[COLOR_BLACK].move_bit(20, 28);
+            b.pawns[COLOR_WHITE].set_bit(28, false);
+        });
+        let notation = board.move_as_string(&board2);
+        assert_eq!(notation, Some(String::from("Kxe5+")));
     }
 
     #[test]
