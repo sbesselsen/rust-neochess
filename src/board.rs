@@ -1304,38 +1304,37 @@ mod tests {
         let board =
             Board::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1").unwrap();
 
-        let mut board2 = board.clone();
-        board2.pawns[COLOR_WHITE].move_bit(25, 17);
-
+        let board2 = board.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(25, 17);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("b6")));
 
-        let mut board2 = board.clone();
-        board2.pawns[COLOR_WHITE].move_bit(25, 18);
-        board2.rooks[COLOR_BLACK].set_bit(18, false);
-
+        let board2 = board.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(25, 18);
+            b.rooks[COLOR_BLACK].set_bit(18, false);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("bxc6")));
 
         let board =
             Board::try_parse_fen("2b1K3/B2P2k1/2r2pnn/1P2P2B/5pPq/4R3/3p1R2/8 b - - 0 1").unwrap();
 
-        let mut board2 = board.clone();
-        board2.pawns[COLOR_BLACK].move_bit(37, 44);
-        board2.rooks[COLOR_WHITE].set_bit(44, false);
-        board2.active_color = COLOR_WHITE;
-
+        let board2 = board.apply_move(|b| {
+            b.pawns[COLOR_BLACK].move_bit(37, 44);
+            b.rooks[COLOR_WHITE].set_bit(44, false);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("fxe3")));
 
         let board =
             Board::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1").unwrap();
 
-        let mut board2 = board.clone();
-        board2.pawns[COLOR_WHITE].set_bit(11, false);
-        board2.queens[COLOR_WHITE].set_bit(2, true);
-        board2.bishops[COLOR_BLACK].set_bit(2, false);
-
+        let board2 = board.apply_move(|b| {
+            b.pawns[COLOR_WHITE].set_bit(11, false);
+            b.queens[COLOR_WHITE].set_bit(2, true);
+            b.bishops[COLOR_BLACK].set_bit(2, false);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("dxc8=Q")));
 
@@ -1343,11 +1342,10 @@ mod tests {
             Board::try_parse_fen("rnbqkbnr/pppppppp/2P5/8/8/8/PP1PPPPP/RNBQKBNR w KQkq - 0 1")
                 .unwrap();
 
-        let mut board2 = board.clone();
-        board2.pawns[COLOR_WHITE].move_bit(18, 11);
-        board2.pawns[COLOR_BLACK].set_bit(11, false);
-        board2.active_color = COLOR_BLACK;
-
+        let board2 = board.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(18, 11);
+            b.pawns[COLOR_BLACK].set_bit(11, false);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("cxd7+")));
 
@@ -1355,11 +1353,10 @@ mod tests {
             Board::try_parse_fen("r2bkbnr/pppppppp/2P5/8/8/4P3/PP2PPPP/RNBQKBNR w KQkq - 0 1")
                 .unwrap();
 
-        let mut board2 = board.clone();
-        board2.pawns[COLOR_WHITE].move_bit(18, 11);
-        board2.pawns[COLOR_BLACK].set_bit(11, false);
-        board2.active_color = COLOR_BLACK;
-
+        let board2 = board.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(18, 11);
+            b.pawns[COLOR_BLACK].set_bit(11, false);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("cxd7#")));
     }
@@ -1371,40 +1368,40 @@ mod tests {
         )
         .unwrap();
 
-        let mut board2 = board.clone();
-        board2.rooks[COLOR_WHITE].move_bit(63, 61);
-        board2.king[COLOR_WHITE].move_bit(60, 62);
-
+        let board2 = board.apply_move(|b| {
+            b.rooks[COLOR_WHITE].move_bit(63, 61);
+            b.king[COLOR_WHITE].move_bit(60, 62);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("O-O")));
 
-        let mut board2 = board.clone();
-        board2.rooks[COLOR_WHITE].move_bit(56, 59);
-        board2.king[COLOR_WHITE].move_bit(60, 58);
-
+        let board2 = board.apply_move(|b| {
+            b.rooks[COLOR_WHITE].move_bit(56, 59);
+            b.king[COLOR_WHITE].move_bit(60, 58);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("O-O-O")));
 
-        let mut board2 = board.clone();
-        board2.king[COLOR_WHITE].move_bit(60, 61);
-
+        let board2 = board.apply_move(|b| {
+            b.king[COLOR_WHITE].move_bit(60, 61);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Kf1")));
 
         let mut board = board.clone();
         board.active_color = COLOR_BLACK;
 
-        let mut board2 = board.clone();
-        board2.king[COLOR_BLACK].move_bit(4, 6);
-        board2.rooks[COLOR_BLACK].move_bit(7, 5);
-
+        let board2 = board.apply_move(|b| {
+            b.king[COLOR_BLACK].move_bit(4, 6);
+            b.rooks[COLOR_BLACK].move_bit(7, 5);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("O-O")));
 
-        let mut board2 = board.clone();
-        board2.king[COLOR_BLACK].move_bit(4, 2);
-        board2.rooks[COLOR_BLACK].move_bit(0, 3);
-
+        let board2 = board.apply_move(|b| {
+            b.king[COLOR_BLACK].move_bit(4, 2);
+            b.rooks[COLOR_BLACK].move_bit(0, 3);
+        });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("O-O-O")));
     }
