@@ -9,6 +9,21 @@ pub enum EvaluatorScore {
     PlusInfinity,
 }
 
+impl std::hash::Hash for EvaluatorScore {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            EvaluatorScore::Value(x) => state.write_i64((x * 1_000_000.0) as i64),
+            EvaluatorScore::MinusInfinity => {
+                state.write_u8(1);
+            }
+            EvaluatorScore::PlusInfinity => {
+                state.write_u8(2);
+            }
+        }
+        state.finish();
+    }
+}
+
 /* Don't be putting any NaN in my values okay? */
 impl Eq for EvaluatorScore {}
 
