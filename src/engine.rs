@@ -1,4 +1,4 @@
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, VecDeque};
 
 use crate::{
     bitboard::{BitBoard, COLOR_WHITE},
@@ -17,8 +17,9 @@ struct EngineFrame {
     board: BitBoard,
     score: EvaluatorScore,
     parent: Option<usize>,
-    descendants: Option<Vec<usize>>,
+    children: Option<Vec<usize>>,
     depth: u32,
+    dropped: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -75,8 +76,9 @@ impl Engine<DefaultEvaluator> {
             board,
             score,
             parent: None,
-            descendants: None,
+            children: None,
             depth: 0,
+            dropped: false,
         });
         self.queue.push(QueueItem {
             index: 0,
@@ -84,33 +86,55 @@ impl Engine<DefaultEvaluator> {
         });
     }
 
-    pub fn iterate(&mut self) {
+    pub fn iterate(&mut self) -> bool {
         if let Some(QueueItem { index, .. }) = self.queue.pop() {
             self.iterate_index(index);
+            true
+        } else {
+            false
         }
     }
 
     fn iterate_index(&mut self, index: usize) {
         let EngineFrame {
             board,
-            descendants,
+            children: descendants,
             depth,
+            dropped,
             ..
         } = &self.frames[index];
 
+        if *dropped {
+            // No longer relevant for some reason.
+            return;
+        }
+
         if descendants.is_some() {
+            // Already computed!
             return;
         }
 
         // Compute the next boards and add their frames.
         let next_boards = board.next_boards();
+        if next_boards.is_empty() {
+            // TODO: mark this board as lost for the current player
+            // Nothing to do here.
+            return;
+        }
         let depth = *depth + 1;
 
-        let mut scores: Vec<EvaluatorScore> = vec![];
+        let scores: Vec<EvaluatorScore> = next_boards
+            .iter()
+            .map(|b| self.evaluator.evaluate(b))
+            .collect();
         let mut descendant_indices: Vec<usize> = vec![];
 
-        for b in next_boards {
-            let score = self.evaluator.evaluate(&b);
+        for (i, b) in next_boards.into_iter().enumerate() {
+            let score = scores[i];
+
+            // TODO: perhaps deduplicate if we have already seen this board?
+            // But that is tricky, because once we allow multiple ancestors,
+            // we could get loops. How would that even work?
 
             let descendant_index = self.frames.len();
             descendant_indices.push(descendant_index);
@@ -119,8 +143,9 @@ impl Engine<DefaultEvaluator> {
                 board: b,
                 score,
                 parent: Some(index),
-                descendants: None,
+                children: None,
                 depth,
+                dropped: false,
             });
             if let EvaluatorScore::Value(_) = &score {
                 // Only go deeper if the game has not ended (no infinite score).
@@ -129,39 +154,76 @@ impl Engine<DefaultEvaluator> {
                     priority: depth,
                 });
             }
-            scores.push(score);
         }
 
-        self.frames[index].descendants = Some(descendant_indices);
+        self.frames[index].children = Some(descendant_indices);
 
         // Do a single upward propagation pass.
-        self.propagate_upward_with_scores(index, scores);
+        // TODO: once we have a forced checkmate, mark all descendants as useless
+        self.propagate_upward_with_scores(index, &scores);
     }
 
-    fn propagate_upward(&mut self, index: usize) {
-        let EngineFrame { descendants, .. } = &self.frames[index];
-        if let Some(indices) = descendants {
-            let scores: Vec<EvaluatorScore> = indices
-                .iter()
-                .map(|&idx| self.frames[idx].score.clone())
-                .collect();
-            self.propagate_upward_with_scores(index, scores);
-        }
-    }
-
-    fn propagate_upward_with_scores(&mut self, index: usize, scores: Vec<EvaluatorScore>) {
-        let EngineFrame { board, parent, .. } = &self.frames[index];
-        let score = *if board.active_color == COLOR_WHITE {
+    fn max_score(scores: &Vec<EvaluatorScore>, active_color: usize) -> Option<&EvaluatorScore> {
+        if active_color == COLOR_WHITE {
             // The aggregate score is the max score of all the following boards.
             scores.iter().max()
         } else {
             scores.iter().min()
         }
-        .expect("scores should contain at least 1 element");
+    }
+
+    fn propagate_upward(&mut self, index: usize) {
+        let EngineFrame {
+            children: descendants,
+            ..
+        } = &self.frames[index];
+        if let Some(indices) = descendants {
+            let scores: Vec<EvaluatorScore> = indices
+                .iter()
+                .map(|&idx| self.frames[idx].score.clone())
+                .collect();
+            self.propagate_upward_with_scores(index, &scores);
+        }
+    }
+
+    fn propagate_upward_with_scores(&mut self, index: usize, scores: &Vec<EvaluatorScore>) {
+        let EngineFrame { board, parent, .. } = &self.frames[index];
+        let active_color = board.active_color;
+        let score = *Self::max_score(scores, board.active_color).expect(
+            "propagate_upward_with_scores() should only be called if there is at least 1 score",
+        );
         let parent = parent.clone();
         self.frames[index].score = score;
+
+        if score.is_win(active_color) {
+            self.drop_descendants(index);
+        }
+
         if let Some(parent_index) = parent {
             self.propagate_upward(parent_index);
+        }
+    }
+
+    fn drop_descendants(&mut self, index: usize) {
+        let mut undropped_descendant_indices: Vec<usize> = vec![];
+        fn walk(output: &mut Vec<usize>, frames: &Vec<EngineFrame>, idx: usize) {
+            let frame = &frames[idx];
+            if frame.dropped {
+                // Already dropped.
+                return;
+            }
+            if let Some(children) = &frame.children {
+                output.extend(children);
+                for child_idx in children {
+                    walk(output, frames, *child_idx);
+                }
+            }
+        }
+
+        walk(&mut undropped_descendant_indices, &self.frames, index);
+
+        for idx in undropped_descendant_indices {
+            self.frames[idx].dropped = true;
         }
     }
 }
@@ -187,13 +249,17 @@ mod tests {
 
         let mut engine = Engine::new();
         engine.start_from_board(board);
-        for _ in 0..800_000 {
-            engine.iterate();
+        for _ in 0..80_000 {
+            if !engine.iterate() {
+                break;
+            }
         }
 
-        println!("{}", engine.frames.len());
-        println!("{}", engine.frames.last().unwrap().depth);
-
+        // The engine notices this is checkmate.
         assert_eq!(engine.frames[0].score, EvaluatorScore::PlusInfinity);
+
+        // The engine didn't go more than halfmoves deep.
+        let max_depth = engine.frames.iter().map(|f| f.depth).max();
+        assert_eq!(max_depth, Some(3));
     }
 }

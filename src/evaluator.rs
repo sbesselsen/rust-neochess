@@ -9,6 +9,23 @@ pub enum EvaluatorScore {
     PlusInfinity,
 }
 
+impl EvaluatorScore {
+    pub fn is_finite(&self) -> bool {
+        match self {
+            EvaluatorScore::Value(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_win(&self, color: usize) -> bool {
+        match self {
+            EvaluatorScore::PlusInfinity => color == COLOR_WHITE,
+            EvaluatorScore::MinusInfinity => color == COLOR_BLACK,
+            _ => false,
+        }
+    }
+}
+
 impl std::hash::Hash for EvaluatorScore {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
