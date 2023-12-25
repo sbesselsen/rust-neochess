@@ -117,7 +117,8 @@ impl Engine<DefaultEvaluator> {
         // Compute the next boards and add their frames.
         let next_boards = board.next_boards();
         if next_boards.is_empty() {
-            // TODO: mark this board as lost for the current player
+            // TODO: handle stalemate properly
+            // TODO: and ridiculous smothered mates like 8/8/2K5/8/8/6N1/pppppppp/rrrrrrrk b - - 0 1
             // Nothing to do here.
             return;
         }
@@ -159,7 +160,6 @@ impl Engine<DefaultEvaluator> {
         self.frames[index].children = Some(descendant_indices);
 
         // Do a single upward propagation pass.
-        // TODO: once we have a forced checkmate, mark all descendants as useless
         self.propagate_upward_with_scores(index, &scores);
     }
 
