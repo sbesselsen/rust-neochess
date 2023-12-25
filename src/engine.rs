@@ -262,4 +262,26 @@ mod tests {
         let max_depth = engine.frames.iter().map(|f| f.depth).max();
         assert_eq!(max_depth, Some(3));
     }
+
+    #[test]
+    fn mate_in_2() {
+        // Taken from https://wtharvey.com/m8n2.txt
+        let board = BitBoard::try_parse_fen(
+            "r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0",
+        )
+        .unwrap();
+
+        let mut engine = Engine::new();
+        engine.start_from_board(board);
+
+        // TODO: while it works, this takes *way* too many steps and takes ~8GiB of memory!
+        for _ in 0..8_000_000 {
+            if !engine.iterate() {
+                break;
+            }
+        }
+
+        // The engine notices this is checkmate.
+        assert_eq!(engine.frames[0].score, EvaluatorScore::PlusInfinity);
+    }
 }
