@@ -1,4 +1,7 @@
-use crate::bitwise_helper::BitwiseHelper;
+use crate::{
+    bitwise_helper::BitwiseHelper,
+    zobrist_constants::{ZOBRIST_BLACK_TO_MOVE, ZOBRIST_EN_PASSANT, ZOBRIST_PIECES},
+};
 use std::fmt::{Debug, Display};
 
 pub const COLOR_WHITE: usize = 0;
@@ -32,6 +35,7 @@ pub struct BitBoard {
     pub en_passant_square: Option<u32>,
     pub halfmove_clock: u16,
     pub fullmove_number: u16,
+    pub zobrist_hash: u64,
 }
 
 #[derive(Debug)]
@@ -84,8 +88,8 @@ impl BitBoard {
         BitBoard {
             pawns: [0, 0],
             rooks: [0, 0],
-            bishops: [0, 0],
             knights: [0, 0],
+            bishops: [0, 0],
             queens: [0, 0],
             king: [0, 0],
             can_castle: [[false, false], [false, false]],
@@ -93,11 +97,12 @@ impl BitBoard {
             en_passant_square: None,
             halfmove_clock: 0,
             fullmove_number: 1,
+            zobrist_hash: 0,
         }
     }
 
     pub fn new_setup() -> BitBoard {
-        BitBoard {
+        let mut board = BitBoard {
             pawns: [0x000000000000FF00, 0x00FF000000000000],
             rooks: [0x0000000000000081, 0x8100000000000000],
             knights: [0x0000000000000042, 0x4200000000000000],
@@ -106,6 +111,89 @@ impl BitBoard {
             king: [0x0000000000000008, 0x0800000000000000],
             can_castle: [[true, true], [true, true]],
             ..BitBoard::new()
+        };
+        board.compute_hash();
+        board
+    }
+
+    fn compute_hash(&mut self) {
+        // TODO: include en passant in the hash!
+        self.zobrist_hash = 0;
+        for color in &[COLOR_WHITE, COLOR_BLACK] {
+            for index in self.pawns[*color].as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][0][*color];
+            }
+            for index in self.rooks[*color].as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][1][*color];
+            }
+            for index in self.knights[*color].as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][2][*color];
+            }
+            for index in self.bishops[*color].as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][3][*color];
+            }
+            for index in self.queens[*color].as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][4][*color];
+            }
+            for index in self.king[*color].as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][5][*color];
+            }
+        }
+        if self.active_color == COLOR_BLACK {
+            self.zobrist_hash ^= ZOBRIST_BLACK_TO_MOVE;
+        }
+        if let Some(en_passant_index) = self.en_passant_square {
+            self.zobrist_hash ^= ZOBRIST_EN_PASSANT[en_passant_index as usize];
+        }
+    }
+
+    fn update_hash(&mut self, prev_board: &BitBoard) {
+        if prev_board.active_color != self.active_color {
+            self.zobrist_hash ^= ZOBRIST_BLACK_TO_MOVE;
+        }
+
+        let move_color = prev_board.active_color;
+        let pawns_mutation = prev_board.pawns[move_color] ^ self.pawns[move_color];
+        if pawns_mutation > 0 {
+            for index in pawns_mutation.as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][0][move_color];
+            }
+        }
+        let rooks_mutation = prev_board.rooks[move_color] ^ self.rooks[move_color];
+        if rooks_mutation > 0 {
+            for index in rooks_mutation.as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][1][move_color];
+            }
+        }
+        let knights_mutation = prev_board.knights[move_color] ^ self.knights[move_color];
+        if knights_mutation > 0 {
+            for index in knights_mutation.as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][2][move_color];
+            }
+        }
+        let bishops_mutation = prev_board.bishops[move_color] ^ self.bishops[move_color];
+        if bishops_mutation > 0 {
+            for index in bishops_mutation.as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][3][move_color];
+            }
+        }
+        let queens_mutation = prev_board.queens[move_color] ^ self.queens[move_color];
+        if queens_mutation > 0 {
+            for index in queens_mutation.as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][4][move_color];
+            }
+        }
+        let king_mutation = prev_board.king[move_color] ^ self.king[move_color];
+        if king_mutation > 0 {
+            for index in king_mutation.as_bit_index_iter() {
+                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][5][move_color];
+            }
+        }
+        if let Some(en_passant_index) = prev_board.en_passant_square {
+            self.zobrist_hash ^= ZOBRIST_EN_PASSANT[en_passant_index as usize];
+        }
+        if let Some(en_passant_index) = self.en_passant_square {
+            self.zobrist_hash ^= ZOBRIST_EN_PASSANT[en_passant_index as usize];
         }
     }
 
@@ -685,6 +773,9 @@ impl BitBoard {
                 b.rooks[COLOR_BLACK] & 0x8000000000000000 > 0 && !black_king_moved;
             b.can_castle[COLOR_BLACK][SIDE_KING] &=
                 b.rooks[COLOR_BLACK] & 0x0100000000000000 > 0 && !black_king_moved;
+
+            // Update the zobrist hash.
+            b.update_hash(self);
         })
     }
 
@@ -1822,5 +1913,77 @@ mod tests {
         }
 
         assert!(start.elapsed().as_millis() < 300);
+    }
+
+    #[test]
+    fn zobrist_hash_basics() {
+        let board = BitBoard::new();
+        assert_eq!(board.zobrist_hash, 0);
+
+        let board = BitBoard::new_setup();
+        let hash1 = board.zobrist_hash;
+        assert_ne!(board.zobrist_hash, 0);
+
+        let board = BitBoard::new_setup();
+        assert_eq!(board.zobrist_hash, hash1);
+    }
+
+    #[test]
+    fn zobrist_hash_moves() {
+        let board = BitBoard::new_setup();
+
+        // Check if a move yields a new hash.
+        let board2 = board.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(48, 40);
+        });
+        assert_ne!(board2.zobrist_hash, board.zobrist_hash);
+
+        // Check if doing the same thing with a new board yields the same hash.
+        let board3 = BitBoard::new_setup().apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(48, 40);
+        });
+        assert_eq!(board3.zobrist_hash, board2.zobrist_hash);
+
+        // Move the knights forward and back to their starting point,
+        // check if we get the same hash again.
+        let board4 = board2
+            .apply_move(|b| {
+                b.knights[COLOR_BLACK].move_bit(1, 18);
+            })
+            .apply_move(|b| {
+                b.knights[COLOR_WHITE].move_bit(57, 42);
+            })
+            .apply_move(|b| {
+                b.knights[COLOR_BLACK].move_bit(18, 1);
+            })
+            .apply_move(|b| {
+                b.knights[COLOR_WHITE].move_bit(42, 57);
+            });
+        assert_eq!(board4.zobrist_hash, board2.zobrist_hash);
+
+        // Move forward with en passant vs 2 moves in sequence,
+        // check that we get different hashes.
+        let board5 = board.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(48, 32);
+            b.en_passant_square = Some(40);
+        });
+        let board6 = board
+            .apply_move(|b| {
+                b.pawns[COLOR_WHITE].move_bit(48, 40);
+            })
+            .apply_move(|_| {})
+            .apply_move(|b| {
+                b.pawns[COLOR_WHITE].move_bit(40, 32);
+            });
+        assert_ne!(board5.zobrist_hash, board6.zobrist_hash);
+
+        // Check that the hashes even out after the next move.
+        let board5b = board5.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(32, 24);
+        });
+        let board6b = board6.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(32, 24);
+        });
+        assert_eq!(board5b.zobrist_hash, board6b.zobrist_hash);
     }
 }
