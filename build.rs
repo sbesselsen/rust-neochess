@@ -29,9 +29,9 @@ fn main() {
         "pub(crate) const ZOBRIST_BLACK_TO_MOVE: u64 = 0x{:0>16x};\n\n",
         rng.next_u64()
     ));
-    output.push_str("pub(crate) const ZOBRIST_EN_PASSANT: &'static [u64; 64] = &[");
+    output.push_str("pub(crate) const ZOBRIST_EN_PASSANT: &'static [u64; 64] = &[\n");
     for _ in 0..64 {
-        output.push_str(&format!("0x{:0>16x}, ", rng.next_u64()));
+        output.push_str(&format!("  0x{:0>16x},\n", rng.next_u64()));
     }
     output.push_str("];\n");
 
