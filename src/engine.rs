@@ -163,7 +163,7 @@ impl Engine<DefaultEvaluator> {
         self.propagate_upward_with_scores(index, &scores);
     }
 
-    fn max_score(scores: &Vec<EvaluatorScore>, active_color: usize) -> Option<&EvaluatorScore> {
+    fn max_score(scores: &[EvaluatorScore], active_color: usize) -> Option<&EvaluatorScore> {
         if active_color == COLOR_WHITE {
             // The aggregate score is the max score of all the following boards.
             scores.iter().max()
@@ -178,21 +178,19 @@ impl Engine<DefaultEvaluator> {
             ..
         } = &self.frames[index];
         if let Some(indices) = descendants {
-            let scores: Vec<EvaluatorScore> = indices
-                .iter()
-                .map(|&idx| self.frames[idx].score.clone())
-                .collect();
+            let scores: Vec<EvaluatorScore> =
+                indices.iter().map(|&idx| self.frames[idx].score).collect();
             self.propagate_upward_with_scores(index, &scores);
         }
     }
 
-    fn propagate_upward_with_scores(&mut self, index: usize, scores: &Vec<EvaluatorScore>) {
+    fn propagate_upward_with_scores(&mut self, index: usize, scores: &[EvaluatorScore]) {
         let EngineFrame { board, parent, .. } = &self.frames[index];
         let active_color = board.active_color;
         let score = *Self::max_score(scores, board.active_color).expect(
             "propagate_upward_with_scores() should only be called if there is at least 1 score",
         );
-        let parent = parent.clone();
+        let parent = *parent;
         self.frames[index].score = score;
 
         if score.is_win(active_color) {

@@ -11,10 +11,7 @@ pub enum EvaluatorScore {
 
 impl EvaluatorScore {
     pub fn is_finite(&self) -> bool {
-        match self {
-            EvaluatorScore::Value(_) => true,
-            _ => false,
-        }
+        matches!(self, EvaluatorScore::Value(_))
     }
 
     pub fn is_win(&self, color: usize) -> bool {

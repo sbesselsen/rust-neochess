@@ -1337,7 +1337,7 @@ impl BitBoard {
             return Err(());
         }
         let files = " abcdefgh";
-        let file = files.find(coords.chars().nth(0).unwrap()).unwrap() as u32;
+        let file = files.find(coords.chars().nth(0).ok_or(())?).ok_or(())? as u32;
         let rank = coords[1..].parse::<u32>().map_err(|_| ())?;
 
         Ok((rank, file))
@@ -1346,7 +1346,10 @@ impl BitBoard {
     fn file_to_char(file: u32) -> char {
         debug_assert!(file > 0 && file <= 8, "invalid file");
         let files = " abcdefgh";
-        files.chars().nth(file as usize).unwrap()
+        files
+            .chars()
+            .nth(file as usize)
+            .expect("file index should be valid")
     }
 }
 
