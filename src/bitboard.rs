@@ -1,8 +1,6 @@
-use crate::{
-    bitwise_helper::BitwiseHelper,
-    zobrist_constants::{ZOBRIST_BLACK_TO_MOVE, ZOBRIST_EN_PASSANT, ZOBRIST_PIECES},
-};
+use crate::bitwise_helper::BitwiseHelper;
 use std::fmt::{Debug, Display};
+use zobrist_constants::{ZOBRIST_BLACK_TO_MOVE, ZOBRIST_EN_PASSANT, ZOBRIST_PIECES};
 
 pub const COLOR_WHITE: usize = 0;
 pub const COLOR_BLACK: usize = 1;
@@ -14,6 +12,10 @@ const RANK_0_MASK: u64 = 0x00000000000000FF;
 const FILE_0_MASK: u64 = 0x8080808080808080;
 const DIAG_TL_MASK: u64 = 0x8040201008040201;
 const DIAG_TR_MASK: u64 = 0x0102040810204080;
+
+mod zobrist_constants {
+    include!(concat!(env!("OUT_DIR"), "/zobrist_constants.rs"));
+}
 
 enum Check {
     None,
