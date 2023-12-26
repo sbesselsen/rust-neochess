@@ -1,4 +1,4 @@
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::BinaryHeap;
 
 use crate::{
     bitboard::{BitBoard, COLOR_WHITE},
@@ -25,7 +25,7 @@ struct EngineFrame {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 struct QueueItem {
     index: usize,
-    priority: u32,
+    priority: i32,
 }
 
 impl PartialOrd for QueueItem {
@@ -36,7 +36,7 @@ impl PartialOrd for QueueItem {
 
 impl Ord for QueueItem {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other.priority.cmp(&self.priority)
+        self.priority.cmp(&other.priority)
     }
 }
 
@@ -152,7 +152,7 @@ impl Engine<DefaultEvaluator> {
                 // Only go deeper if the game has not ended (no infinite score).
                 self.queue.push(QueueItem {
                     index: descendant_index,
-                    priority: depth,
+                    priority: -(depth as i32),
                 });
             }
         }
@@ -205,6 +205,14 @@ impl Engine<DefaultEvaluator> {
     }
 
     fn drop_descendants(&mut self, index: usize) {
+        if index == 0 {
+            // Special case.
+            for frame in self.frames.iter_mut() {
+                frame.dropped = true;
+            }
+            self.queue.clear();
+            return;
+        }
         let mut undropped_descendant_indices: Vec<usize> = vec![];
         fn walk(output: &mut Vec<usize>, frames: &Vec<EngineFrame>, idx: usize) {
             let frame = &frames[idx];
@@ -275,7 +283,7 @@ mod tests {
         engine.start_from_board(board);
 
         // TODO: while it works, this takes *way* too many steps and takes ~8GiB of memory!
-        for _ in 0..8_000_000 {
+        for _ in 0..2_000_000 {
             if !engine.iterate() {
                 break;
             }
