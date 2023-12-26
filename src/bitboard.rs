@@ -1,5 +1,8 @@
 use crate::bitwise_helper::BitwiseHelper;
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+};
 use zobrist_constants::{ZOBRIST_BLACK_TO_MOVE, ZOBRIST_EN_PASSANT, ZOBRIST_PIECES};
 
 pub const COLOR_WHITE: usize = 0;
@@ -23,7 +26,7 @@ enum Check {
     Checkmate,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct BitBoard {
     // Board definition
     pub pawns: [u64; 2],
@@ -63,6 +66,12 @@ impl Display for FenParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("FenParseError: ")?;
         f.write_str(&self.message)
+    }
+}
+
+impl Hash for BitBoard {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.zobrist_hash.hash(state);
     }
 }
 
