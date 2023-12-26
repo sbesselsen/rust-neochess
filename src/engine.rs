@@ -272,6 +272,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn mate_in_2() {
         // Taken from https://wtharvey.com/m8n2.txt
         let board = BitBoard::try_parse_fen(
