@@ -329,7 +329,27 @@ impl BitBoard {
         self.push_knight_moves(&mut output);
         self.push_king_moves(&mut output);
 
+        // Current player cannot be in check after the move.
+        Self::remove_checks(&mut output);
+
         output
+    }
+
+    fn remove_checks(boards: &mut Vec<BitBoard>) {
+        boards.retain_mut(|b| {
+            b.active_color = b.active_color.opponent();
+            let is_check = b.is_check();
+            b.active_color = b.active_color.opponent();
+            !is_check
+        });
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.king[COLOR_WHITE].count_ones() == 1 && self.king[COLOR_BLACK].count_ones() == 1
+    }
+
+    pub fn is_check(&self) -> bool {
+        self.king[self.active_color] > 0 && self.mask_is_attacked(self.king[self.active_color])
     }
 
     pub fn to_fen(&self) -> String {
@@ -1565,23 +1585,27 @@ mod tests {
 
         let mut moves: Vec<BitBoard> = vec![];
         board.push_pawn_moves(&mut moves);
+        BitBoard::remove_checks(&mut moves);
         assert_eq!(moves.len(), pawn_moves);
 
         let mut moves: Vec<BitBoard> = vec![];
         board.push_king_moves(&mut moves);
-        // Note that the king is allowed to put itself in check in next_boards().
+        BitBoard::remove_checks(&mut moves);
         assert_eq!(moves.len(), king_moves);
 
         let mut moves: Vec<BitBoard> = vec![];
         board.push_rooklike_moves(&mut moves);
+        BitBoard::remove_checks(&mut moves);
         assert_eq!(moves.len(), rooklike_moves);
 
         let mut moves: Vec<BitBoard> = vec![];
         board.push_bishoplike_moves(&mut moves);
+        BitBoard::remove_checks(&mut moves);
         assert_eq!(moves.len(), bishoplike_moves);
 
         let mut moves: Vec<BitBoard> = vec![];
         board.push_knight_moves(&mut moves);
+        BitBoard::remove_checks(&mut moves);
         assert_eq!(moves.len(), knight_moves);
 
         assert_eq!(
@@ -1610,7 +1634,7 @@ mod tests {
             0,
             6,
             0,
-            7,
+            2,
         );
     }
 
