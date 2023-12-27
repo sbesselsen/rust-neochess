@@ -10,6 +10,21 @@ pub enum EvaluatorScore {
 }
 
 impl EvaluatorScore {
+    pub fn infinity_for(color: usize) -> EvaluatorScore {
+        match color {
+            COLOR_WHITE => EvaluatorScore::PlusInfinity,
+            _ => EvaluatorScore::MinusInfinity,
+        }
+    }
+
+    pub fn inverse(&self) -> EvaluatorScore {
+        match self {
+            &EvaluatorScore::MinusInfinity => EvaluatorScore::PlusInfinity,
+            &EvaluatorScore::PlusInfinity => EvaluatorScore::MinusInfinity,
+            &EvaluatorScore::Value(v) => EvaluatorScore::Value(-v),
+        }
+    }
+
     pub fn is_finite(&self) -> bool {
         matches!(self, EvaluatorScore::Value(_))
     }

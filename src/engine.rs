@@ -1,5 +1,5 @@
 use crate::{
-    bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE},
+    bitboard::{BitBoard, COLOR_WHITE},
     evaluator::{DefaultEvaluator, Evaluator, EvaluatorScore},
 };
 
@@ -48,18 +48,19 @@ impl Engine<DefaultEvaluator> {
             return Some(self.evaluator.evaluate(board));
         }
 
-        if board.active_color == COLOR_WHITE && board.king[COLOR_BLACK] == 0 {
-            return Some(EvaluatorScore::PlusInfinity);
-        }
-        if board.active_color == COLOR_BLACK && board.king[COLOR_WHITE] == 0 {
-            return Some(EvaluatorScore::MinusInfinity);
+        let next_boards = board.next_boards();
+        if next_boards.is_empty() {
+            if board.is_check() {
+                return Some(EvaluatorScore::infinity_for(board.active_color).inverse());
+            } else {
+                return Some(EvaluatorScore::Value(0.0));
+            }
         }
 
-        let scores = board
-            .next_boards()
+        let scores = next_boards
             .into_iter()
             .filter_map(|b| self.minmax_eval(&b, depth - 1));
-        // TODO: if the other player is in check, mark it as infinity
+
         if board.active_color == COLOR_WHITE {
             scores.max()
         } else {
@@ -108,7 +109,7 @@ mod tests {
         .unwrap();
 
         let engine = Engine::new();
-        let result = engine.minmax(&board, 5);
+        let result = engine.minmax(&board, 4);
 
         assert!(result.is_some());
 
