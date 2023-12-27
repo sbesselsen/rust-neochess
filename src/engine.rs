@@ -1,35 +1,86 @@
+use std::fmt::Debug;
+
 use crate::{
     bitboard::{BitBoard, COLOR_WHITE},
     evaluator::{DefaultEvaluator, Evaluator, EvaluatorScore},
 };
 
-#[derive(Debug)]
-pub struct Engine<E> {
-    evaluator: E,
+#[derive(Default)]
+pub struct EngineBuilder {
+    pub transposition_table_size: Option<usize>,
+    pub evaluator: Option<Box<dyn Evaluator>>,
 }
 
-impl Default for Engine<DefaultEvaluator> {
-    fn default() -> Self {
-        Self::new()
+impl EngineBuilder {
+    pub fn new() -> EngineBuilder {
+        Default::default()
     }
-}
 
-impl<E> Engine<E>
-where
-    E: Evaluator,
-{
-    pub fn new_with_evaluator(evaluator: E) -> Self {
-        Engine { evaluator }
-    }
-}
-
-impl Engine<DefaultEvaluator> {
-    pub fn new() -> Self {
-        Engine {
-            evaluator: Default::default(),
+    pub fn with_evaluator(self, evaluator: Box<dyn Evaluator>) -> Self {
+        Self {
+            evaluator: Some(evaluator),
+            ..self
         }
     }
 
+    pub fn with_transposition_table_size(self, size: usize) -> Self {
+        Self {
+            transposition_table_size: Some(size),
+            ..self
+    }
+}
+
+    pub fn build(self) -> Engine {
+        Engine::from(self)
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct TranspositionTableEntry {
+    zobrist_hash: u64,
+    depth: u32,
+    score: EvaluatorScore,
+}
+
+pub struct Engine {
+    evaluator: Box<dyn Evaluator>,
+    transposition_table: Vec<Option<TranspositionTableEntry>>,
+}
+
+impl Debug for Engine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Engine")
+            .field("evaluator", &format_args!("(boxed)"))
+            .field("transposition_table", &self.transposition_table)
+            .finish()
+    }
+}
+
+impl From<EngineBuilder> for Engine {
+    fn from(builder: EngineBuilder) -> Self {
+        let evaluator = builder
+            .evaluator
+            .unwrap_or_else(|| Box::new(DefaultEvaluator::new()));
+
+        let transposition_table_size = builder.transposition_table_size.unwrap_or(10_000_000);
+        let mut transposition_table: Vec<Option<TranspositionTableEntry>> =
+            Vec::with_capacity(transposition_table_size);
+        transposition_table.resize_with(transposition_table_size, || None);
+
+        Engine {
+            evaluator,
+            transposition_table,
+        }
+    }
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::from(EngineBuilder::default())
+        }
+    }
+
+impl Engine {
     pub fn minmax_cutoff(
         &self,
         board: &BitBoard,
@@ -118,14 +169,14 @@ impl Engine<DefaultEvaluator> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{bitboard::BitBoard, engine::DefaultEvaluator, evaluator::EvaluatorScore};
+    use crate::{bitboard::BitBoard, evaluator::EvaluatorScore};
 
     use super::Engine;
 
     #[test]
     fn create_engine() {
-        let engine = Engine::new();
-        assert_eq!(engine.evaluator, DefaultEvaluator::new());
+        // Just make sure it doesn't panic.
+        let _engine = Engine::default();
     }
 
     #[test]
@@ -135,7 +186,7 @@ mod tests {
         )
         .unwrap();
 
-        let engine = Engine::new();
+        let engine = Engine::default();
         let (b, score) = engine.minmax_cutoff(&board, 3);
 
         // The engine notices this is checkmate.
@@ -156,7 +207,7 @@ mod tests {
         )
         .unwrap();
 
-        let engine = Engine::new();
+        let engine = Engine::default();
         let (b, score) = engine.minmax_cutoff(&board, 4);
 
         // The engine notices this is checkmate.
