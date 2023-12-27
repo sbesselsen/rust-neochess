@@ -30,41 +30,88 @@ impl Engine<DefaultEvaluator> {
         }
     }
 
-    pub fn minmax(&self, board: &BitBoard, depth: u32) -> Option<(BitBoard, EvaluatorScore)> {
-        assert!(depth > 0, "depth should be at least 1");
-        let boards_with_scores = board
-            .next_boards()
-            .into_iter()
-            .filter_map(|b| self.minmax_eval(&b, depth - 1).map(|eval| (b, eval)));
-        if board.active_color == COLOR_WHITE {
-            boards_with_scores.max_by(|x, y| x.1.cmp(&y.1))
-        } else {
-            boards_with_scores.min_by(|x, y| x.1.cmp(&y.1))
-        }
+    pub fn minmax_cutoff(
+        &self,
+        board: &BitBoard,
+        depth: u32,
+    ) -> (Option<BitBoard>, EvaluatorScore) {
+        debug_assert!(depth > 0, "depth should be at least 1");
+        self.minmax_cutoff_inner(
+            board,
+            depth,
+            EvaluatorScore::MinusInfinity,
+            EvaluatorScore::PlusInfinity,
+        )
     }
 
-    fn minmax_eval(&self, board: &BitBoard, depth: u32) -> Option<EvaluatorScore> {
+    fn minmax_cutoff_inner(
+        &self,
+        board: &BitBoard,
+        depth: u32,
+        best_enforced_for_white: EvaluatorScore,
+        best_enforced_for_black: EvaluatorScore,
+    ) -> (Option<BitBoard>, EvaluatorScore) {
         if depth == 0 {
-            return Some(self.evaluator.evaluate(board));
+            return (None, self.evaluator.evaluate(board));
         }
 
         let next_boards = board.next_boards();
         if next_boards.is_empty() {
             if board.is_check() {
-                return Some(EvaluatorScore::infinity_for(board.active_color).inverse());
+                return (
+                    None,
+                    EvaluatorScore::infinity_for(board.active_color).inverse(),
+                );
             } else {
-                return Some(EvaluatorScore::Value(0.0));
+                return (None, EvaluatorScore::Value(0.0));
             }
         }
 
-        let scores = next_boards
-            .into_iter()
-            .filter_map(|b| self.minmax_eval(&b, depth - 1));
+        let mut best_enforced_for_white = best_enforced_for_white;
+        let mut best_enforced_for_black = best_enforced_for_black;
+        let mut best_board: Option<BitBoard> = None;
+        let mut best_score: EvaluatorScore;
 
         if board.active_color == COLOR_WHITE {
-            scores.max()
+            best_score = EvaluatorScore::MinusInfinity;
+            for b in next_boards {
+                let (_, score) = self.minmax_cutoff_inner(
+                    &b,
+                    depth - 1,
+                    best_enforced_for_white,
+                    best_enforced_for_black,
+                );
+                if score > best_score {
+                    best_board = Some(b);
+                    best_score = score;
+                }
+                best_enforced_for_white = best_enforced_for_white.max(score);
+                if score >= best_enforced_for_black {
+                    // Beta cutoff
+                    break;
+                }
+            }
+            (best_board, best_score)
         } else {
-            scores.min()
+            best_score = EvaluatorScore::PlusInfinity;
+            for b in next_boards {
+                let (_, score) = self.minmax_cutoff_inner(
+                    &b,
+                    depth - 1,
+                    best_enforced_for_white,
+                    best_enforced_for_black,
+                );
+                if score < best_score {
+                    best_board = Some(b);
+                    best_score = score;
+                }
+                best_enforced_for_black = best_enforced_for_black.min(score);
+                if score <= best_enforced_for_white {
+                    // Alpha cutoff
+                    break;
+                }
+            }
+            (best_board, best_score)
         }
     }
 }
@@ -82,25 +129,27 @@ mod tests {
     }
 
     #[test]
-    fn simple_checkmate() {
+    fn mate_in_1() {
         let board = BitBoard::try_parse_fen(
             "r3kbnr/p1pp1ppp/bp2P3/8/1n5N/4P3/PPP2PPP/RNBQKB1R w KQkq - 1 7",
         )
         .unwrap();
 
         let engine = Engine::new();
-        let result = engine.minmax(&board, 3);
-
-        assert!(result.is_some());
-
-        let (_, score) = result.unwrap();
+        let (b, score) = engine.minmax_cutoff(&board, 3);
 
         // The engine notices this is checkmate.
         assert_eq!(score, EvaluatorScore::PlusInfinity);
+
+        assert!(b.is_some());
+        assert_eq!(
+            b.unwrap().to_fen(),
+            "r3kbnr/p1pQ1ppp/bp2P3/8/1n5N/4P3/PPP2PPP/RNB1KB1R b KQkq - 0 7"
+        );
     }
 
     #[test]
-    fn mate_in_2_minmax() {
+    fn mate_in_2() {
         // Taken from https://wtharvey.com/m8n2.txt
         let board = BitBoard::try_parse_fen(
             "r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 1",
@@ -108,19 +157,16 @@ mod tests {
         .unwrap();
 
         let engine = Engine::new();
-        let result = engine.minmax(&board, 4);
-
-        assert!(result.is_some());
-
-        let (board2, score) = result.unwrap();
+        let (b, score) = engine.minmax_cutoff(&board, 4);
 
         // The engine notices this is checkmate.
         assert_eq!(score, EvaluatorScore::PlusInfinity);
 
         // It got the right move.
+        assert!(b.is_some());
         assert_eq!(
-            board2.to_fen(),
-            "r2qkb1r/pp2nppp/3p1N2/2p1N1B1/2BnP3/3P4/PPP2PPP/R2bK2R b KQkq - 2 1"
+            b.unwrap().to_fen(),
+            "r2qkb1r/pp2nppp/3p1N2/2p1N1B1/2BnP3/3P4/PPP2PPP/R2bK2R b KQkq - 0 1"
         );
     }
 }
