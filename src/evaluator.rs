@@ -19,9 +19,9 @@ impl EvaluatorScore {
 
     pub fn inverse(&self) -> EvaluatorScore {
         match self {
-            &EvaluatorScore::MinusInfinity => EvaluatorScore::PlusInfinity,
-            &EvaluatorScore::PlusInfinity => EvaluatorScore::MinusInfinity,
-            &EvaluatorScore::Value(v) => EvaluatorScore::Value(-v),
+            EvaluatorScore::MinusInfinity => EvaluatorScore::PlusInfinity,
+            EvaluatorScore::PlusInfinity => EvaluatorScore::MinusInfinity,
+            EvaluatorScore::Value(v) => EvaluatorScore::Value(-v),
         }
     }
 
