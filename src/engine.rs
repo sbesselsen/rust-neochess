@@ -27,8 +27,8 @@ impl EngineBuilder {
         Self {
             transposition_table_size: Some(size),
             ..self
+        }
     }
-}
 
     pub fn build(self) -> Engine {
         Engine::from(self)
@@ -40,6 +40,7 @@ struct TranspositionTableEntry {
     zobrist_hash: u64,
     depth: u32,
     score: EvaluatorScore,
+    bounds: (EvaluatorScore, EvaluatorScore),
 }
 
 pub struct Engine {
@@ -77,45 +78,68 @@ impl From<EngineBuilder> for Engine {
 impl Default for Engine {
     fn default() -> Self {
         Self::from(EngineBuilder::default())
-        }
     }
+}
 
 impl Engine {
     pub fn minmax_cutoff(
-        &self,
+        &mut self,
         board: &BitBoard,
         depth: u32,
     ) -> (Option<BitBoard>, EvaluatorScore) {
-        debug_assert!(depth > 0, "depth should be at least 1");
+        assert!(depth > 0, "depth should be at least 1");
         self.minmax_cutoff_inner(
             board,
             depth,
+            true,
             EvaluatorScore::MinusInfinity,
             EvaluatorScore::PlusInfinity,
         )
     }
 
     fn minmax_cutoff_inner(
-        &self,
+        &mut self,
         board: &BitBoard,
         depth: u32,
+        return_board: bool,
         best_enforced_for_white: EvaluatorScore,
         best_enforced_for_black: EvaluatorScore,
     ) -> (Option<BitBoard>, EvaluatorScore) {
+        if !return_board {
+            if let Some(TranspositionTableEntry { score, .. }) = self.get_transposition_entry(
+                board,
+                depth,
+                (best_enforced_for_white, best_enforced_for_black),
+            ) {
+                return (None, score);
+            }
+        }
+
         if depth == 0 {
-            return (None, self.evaluator.evaluate(board));
+            let score = self.evaluator.evaluate(board);
+            self.add_transposition_entry(
+                board,
+                depth,
+                score,
+                (best_enforced_for_white, best_enforced_for_black),
+            );
+            return (None, score);
         }
 
         let next_boards = board.next_boards();
         if next_boards.is_empty() {
-            if board.is_check() {
-                return (
-                    None,
-                    EvaluatorScore::infinity_for(board.active_color).inverse(),
-                );
+            let score = if board.is_check() {
+                EvaluatorScore::infinity_for(board.active_color).inverse()
             } else {
-                return (None, EvaluatorScore::Value(0.0));
-            }
+                EvaluatorScore::Value(0.0)
+            };
+            self.add_transposition_entry(
+                board,
+                depth,
+                score,
+                (best_enforced_for_white, best_enforced_for_black),
+            );
+            return (None, score);
         }
 
         let mut best_enforced_for_white = best_enforced_for_white;
@@ -129,6 +153,7 @@ impl Engine {
                 let (_, score) = self.minmax_cutoff_inner(
                     &b,
                     depth - 1,
+                    false,
                     best_enforced_for_white,
                     best_enforced_for_black,
                 );
@@ -142,13 +167,19 @@ impl Engine {
                     break;
                 }
             }
-            (best_board, best_score)
+            self.add_transposition_entry(
+                board,
+                depth,
+                best_score,
+                (best_enforced_for_white, best_enforced_for_black),
+            );
         } else {
             best_score = EvaluatorScore::PlusInfinity;
             for b in next_boards {
                 let (_, score) = self.minmax_cutoff_inner(
                     &b,
                     depth - 1,
+                    false,
                     best_enforced_for_white,
                     best_enforced_for_black,
                 );
@@ -162,8 +193,57 @@ impl Engine {
                     break;
                 }
             }
-            (best_board, best_score)
+            self.add_transposition_entry(
+                board,
+                depth,
+                best_score,
+                (best_enforced_for_white, best_enforced_for_black),
+            );
         }
+
+        (best_board, best_score)
+    }
+
+    fn add_transposition_entry(
+        &mut self,
+        board: &BitBoard,
+        depth: u32,
+        score: EvaluatorScore,
+        bounds: (EvaluatorScore, EvaluatorScore),
+    ) {
+        let index = (board.zobrist_hash % (self.transposition_table.len() as u64)) as usize;
+
+        // In debug mode, check if something better is already in the table.
+        // Our code should not allow that to happen and it's not catastrophic, so
+        // only check during debug.
+        debug_assert!(!matches!(
+            self.transposition_table[index],
+            Some(e) if e.depth >= depth && e.zobrist_hash == board.zobrist_hash
+        ));
+
+        // Write the new value.
+        self.transposition_table[index].replace(TranspositionTableEntry {
+            zobrist_hash: board.zobrist_hash,
+            depth,
+            score,
+            bounds,
+        });
+    }
+
+    fn get_transposition_entry(
+        &self,
+        board: &BitBoard,
+        depth: u32,
+        bounds: (EvaluatorScore, EvaluatorScore),
+    ) -> Option<TranspositionTableEntry> {
+        let index = (board.zobrist_hash % (self.transposition_table.len() as u64)) as usize;
+
+        self.transposition_table[index].filter(|e| {
+            e.depth >= depth
+                && e.zobrist_hash == board.zobrist_hash
+                && e.bounds.0 <= bounds.0
+                && e.bounds.1 >= bounds.1
+        })
     }
 }
 
@@ -186,7 +266,7 @@ mod tests {
         )
         .unwrap();
 
-        let engine = Engine::default();
+        let mut engine = Engine::default();
         let (b, score) = engine.minmax_cutoff(&board, 3);
 
         // The engine notices this is checkmate.
@@ -207,7 +287,7 @@ mod tests {
         )
         .unwrap();
 
-        let engine = Engine::default();
+        let mut engine = Engine::default();
         let (b, score) = engine.minmax_cutoff(&board, 4);
 
         // The engine notices this is checkmate.
@@ -218,6 +298,22 @@ mod tests {
         assert_eq!(
             b.unwrap().to_fen(),
             "r2qkb1r/pp2nppp/3p1N2/2p1N1B1/2BnP3/3P4/PPP2PPP/R2bK2R b KQkq - 0 1"
+        );
+    }
+
+    #[test]
+    fn transposition_test() {
+        // Taken from https://wtharvey.com/m8n2.txt
+        let board =
+            BitBoard::try_parse_fen("5r2/8/1R6/ppk3p1/2N3P1/P4b2/1K6/5B2 w - - 0 1").unwrap();
+
+        let mut engine = Engine::default();
+        let (b, _score) = engine.minmax_cutoff(&board, 8);
+
+        // It got the right move.
+        assert_eq!(
+            b.map(|b| b.to_fen()),
+            Some(String::from("5r2/8/8/pRk3p1/2N3P1/P4b2/1K6/5B2 b - - 1 1")),
         );
     }
 }
