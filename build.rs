@@ -31,6 +31,16 @@ fn main() {
     for _ in 0..64 {
         output.push_str(&format!("  0x{:0>16x},\n", rng.next_u64()));
     }
+    output.push_str("];\n\n");
+
+    output.push_str("pub(crate) const ZOBRIST_CASTLING: &[&[u64; 2]; 2] = &[\n");
+    for _ in 0..2 {
+        output.push_str(&format!(
+            "  &[0x{:0>16x}, 0x{:0>16x}],\n",
+            rng.next_u64(),
+            rng.next_u64()
+        ));
+    }
     output.push_str("];\n");
 
     std::fs::write(path, &output).expect("should be able to write zobrist_constants.rs to OUT_DIR");

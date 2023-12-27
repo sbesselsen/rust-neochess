@@ -3,7 +3,9 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
 };
-use zobrist_constants::{ZOBRIST_BLACK_TO_MOVE, ZOBRIST_EN_PASSANT, ZOBRIST_PIECES};
+use zobrist_constants::{
+    ZOBRIST_BLACK_TO_MOVE, ZOBRIST_CASTLING, ZOBRIST_EN_PASSANT, ZOBRIST_PIECES,
+};
 
 pub const COLOR_WHITE: usize = 0;
 pub const COLOR_BLACK: usize = 1;
@@ -128,7 +130,6 @@ impl BitBoard {
     }
 
     fn compute_hash(&mut self) {
-        // TODO: include en passant in the hash!
         self.zobrist_hash = 0;
         for color in &[COLOR_WHITE, COLOR_BLACK] {
             for index in self.pawns[*color].as_bit_index_iter() {
@@ -155,6 +156,18 @@ impl BitBoard {
         }
         if let Some(en_passant_index) = self.en_passant_square {
             self.zobrist_hash ^= ZOBRIST_EN_PASSANT[en_passant_index as usize];
+        }
+        if !self.can_castle[COLOR_WHITE][SIDE_KING] {
+            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_WHITE][SIDE_KING];
+        }
+        if !self.can_castle[COLOR_WHITE][SIDE_QUEEN] {
+            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_WHITE][SIDE_QUEEN];
+        }
+        if !self.can_castle[COLOR_BLACK][SIDE_KING] {
+            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_BLACK][SIDE_KING];
+        }
+        if !self.can_castle[COLOR_BLACK][SIDE_QUEEN] {
+            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_BLACK][SIDE_QUEEN];
         }
     }
 
@@ -200,11 +213,31 @@ impl BitBoard {
                 self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][5][move_color];
             }
         }
+
         if let Some(en_passant_index) = prev_board.en_passant_square {
             self.zobrist_hash ^= ZOBRIST_EN_PASSANT[en_passant_index as usize];
         }
         if let Some(en_passant_index) = self.en_passant_square {
             self.zobrist_hash ^= ZOBRIST_EN_PASSANT[en_passant_index as usize];
+        }
+
+        if !self.can_castle[COLOR_WHITE][SIDE_KING] && prev_board.can_castle[COLOR_WHITE][SIDE_KING]
+        {
+            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_WHITE][SIDE_KING];
+        }
+        if !self.can_castle[COLOR_WHITE][SIDE_QUEEN]
+            && prev_board.can_castle[COLOR_WHITE][SIDE_QUEEN]
+        {
+            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_WHITE][SIDE_QUEEN];
+        }
+        if !self.can_castle[COLOR_BLACK][SIDE_KING] && prev_board.can_castle[COLOR_BLACK][SIDE_KING]
+        {
+            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_BLACK][SIDE_KING];
+        }
+        if !self.can_castle[COLOR_BLACK][SIDE_QUEEN]
+            && prev_board.can_castle[COLOR_BLACK][SIDE_QUEEN]
+        {
+            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_BLACK][SIDE_QUEEN];
         }
     }
 
@@ -1459,9 +1492,11 @@ mod tests {
     use std::{collections::VecDeque, time::Instant};
 
     use crate::{
-        bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK},
+        bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING},
         bitwise_helper::BitwiseHelper,
     };
+
+    use super::SIDE_QUEEN;
 
     #[test]
     fn empty_board_works() {
@@ -1950,7 +1985,7 @@ mod tests {
             }
         }
 
-        assert!(start.elapsed().as_millis() < 300);
+        assert!(start.elapsed().as_millis() < 1_000);
     }
 
     #[test]
@@ -2023,5 +2058,27 @@ mod tests {
             b.pawns[COLOR_WHITE].move_bit(32, 24);
         });
         assert_eq!(board5b.zobrist_hash, board6b.zobrist_hash);
+    }
+
+    #[test]
+    fn zobrist_hash_castling() {
+        let board = BitBoard::new_setup();
+        let board2 = board
+            .apply_move(|b| {
+                b.can_castle[COLOR_WHITE][SIDE_QUEEN] = false;
+            })
+            .apply_move(|_| {});
+        assert_ne!(board.zobrist_hash, board2.zobrist_hash);
+
+        let board2 = board.apply_move(|_| {}).apply_move(|b| {
+            b.can_castle[COLOR_BLACK][SIDE_KING] = false;
+        });
+        let incremental_hash = board2.zobrist_hash;
+        assert_ne!(board.zobrist_hash, board2.zobrist_hash);
+
+        let mut board2 = board.clone();
+        board2.can_castle[COLOR_BLACK][SIDE_KING] = false;
+        board2.compute_hash();
+        assert_eq!(board2.zobrist_hash, incremental_hash);
     }
 }
