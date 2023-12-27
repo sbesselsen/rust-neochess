@@ -784,7 +784,7 @@ impl BitBoard {
         self.apply_mutation(|b| {
             b.en_passant_square = None;
             f(b);
-            b.halfmove_clock += 1;
+            b.halfmove_clock ^= 1;
             if b.active_color == COLOR_WHITE {
                 b.active_color = COLOR_BLACK;
             } else {
