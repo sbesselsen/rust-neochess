@@ -22,12 +22,6 @@ mod zobrist_constants {
     include!(concat!(env!("OUT_DIR"), "/zobrist_constants.rs"));
 }
 
-enum Check {
-    None,
-    Check,
-    Checkmate,
-}
-
 #[derive(Clone, PartialEq, Eq)]
 pub struct BitBoard {
     // Board definition
@@ -350,6 +344,8 @@ impl BitBoard {
             .parse()
             .map_err(|_| FenParseError::from("Invalid fullmove number"))?;
 
+        board.compute_hash();
+
         Ok(board)
     }
 
@@ -383,6 +379,20 @@ impl BitBoard {
 
     pub fn is_check(&self) -> bool {
         self.king[self.active_color] > 0 && self.mask_is_attacked(self.king[self.active_color])
+    }
+
+    pub fn is_checkmate(&self) -> bool {
+        if !self.is_check() {
+            return false;
+        }
+        let mut next_boards: Vec<BitBoard> = self.next_boards();
+        for b in next_boards.iter_mut() {
+            b.active_color = self.active_color;
+            if !b.is_check() {
+                return false;
+            }
+        }
+        return true;
     }
 
     pub fn to_fen(&self) -> String {
@@ -477,10 +487,14 @@ impl BitBoard {
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
 
         let moved_pawns = self.pawns[self.active_color] & !after_move.pawns[self.active_color];
-        let check_suffix = match after_move.check_state() {
-            Check::None => "",
-            Check::Check => "+",
-            Check::Checkmate => "#",
+        let check_suffix = if after_move.is_check() {
+            if after_move.is_checkmate() {
+                "#"
+            } else {
+                "+"
+            }
+        } else {
+            ""
         };
         if moved_pawns > 0 {
             let from_index = moved_pawns.leading_zeros();
@@ -1325,27 +1339,6 @@ impl BitBoard {
             | self.bishops[color]
             | self.queens[color]
             | self.king[color]
-    }
-
-    fn check_state(&self) -> Check {
-        if self.king[self.active_color] > 0 && self.mask_is_attacked(self.king[self.active_color]) {
-            let mut next_boards: Vec<BitBoard> = self.next_boards();
-            let mut is_checkmate = true;
-            for b in next_boards.iter_mut() {
-                b.active_color = self.active_color;
-                if !b.mask_is_attacked(b.king[self.active_color]) {
-                    is_checkmate = false;
-                    break;
-                }
-            }
-            if is_checkmate {
-                Check::Checkmate
-            } else {
-                Check::Check
-            }
-        } else {
-            Check::None
-        }
     }
 
     fn square_occupant_to_char(&self, index: u32) -> char {
