@@ -12,11 +12,11 @@ pub const COLOR_BLACK: usize = 1;
 pub const SIDE_QUEEN: usize = 0;
 pub const SIDE_KING: usize = 1;
 
-const ALL_MASK: u64 = 0xFFFFFFFFFFFFFFFF;
-const RANK_0_MASK: u64 = 0x00000000000000FF;
-const FILE_0_MASK: u64 = 0x8080808080808080;
-const DIAG_TL_MASK: u64 = 0x8040201008040201;
-const DIAG_TR_MASK: u64 = 0x0102040810204080;
+pub const ALL_MASK: u64 = 0xFFFFFFFFFFFFFFFF;
+pub const RANK_0_MASK: u64 = 0x00000000000000FF;
+pub const FILE_0_MASK: u64 = 0x8080808080808080;
+pub const DIAG_TL_MASK: u64 = 0x8040201008040201;
+pub const DIAG_TR_MASK: u64 = 0x0102040810204080;
 
 mod zobrist_constants {
     include!(concat!(env!("OUT_DIR"), "/zobrist_constants.rs"));

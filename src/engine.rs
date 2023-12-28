@@ -363,13 +363,10 @@ mod tests {
         let board = BitBoard::new_setup();
 
         let mut engine = Engine::default();
-        let (b, score) = engine.minmax_cutoff(&board, 8);
+        let (b, _score) = engine.minmax_cutoff(&board, 8);
 
         assert!(b.is_some());
-        let b = b.unwrap();
 
-        println!("{b}");
-        println!("Score: {score}");
-        assert!(false);
+        // TODO: it should be a reasonable move
     }
 }

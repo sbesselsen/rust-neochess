@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, fmt::Display};
 
-use crate::bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE};
+use crate::bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EvaluatorScore {
@@ -150,9 +150,9 @@ impl Evaluator for DefaultEvaluator {
                 return -10;
             }
             let promotion_rank_mask = if prev_board.active_color == COLOR_WHITE {
-                0x00FF000000000000
+                RANK_0_MASK << 48
             } else {
-                0x000000000000FF00
+                RANK_0_MASK << 8
             };
             if (prev_board.pawns[prev_board.active_color] & !b.pawns[prev_board.active_color])
                 & promotion_rank_mask
