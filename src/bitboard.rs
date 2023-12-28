@@ -354,7 +354,7 @@ impl BitBoard {
     }
 
     pub fn next_boards(&self) -> Vec<BitBoard> {
-        let mut output = vec![];
+        let mut output = Vec::with_capacity(40);
 
         self.push_pawn_moves(&mut output);
         self.push_rooklike_moves(&mut output);
