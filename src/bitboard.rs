@@ -1962,7 +1962,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn make_many_boards() {
         let start = Instant::now();
 
