@@ -98,7 +98,7 @@ impl Engine {
         if board.active_color == COLOR_WHITE {
             (b, score)
         } else {
-            (b, score.inverse())
+            (b, -score)
         }
     }
 
@@ -141,22 +141,21 @@ impl Engine {
         let mut best_board: Option<BitBoard> = None;
         let mut best_score: EvaluatorScore;
 
-            best_score = EvaluatorScore::MinusInfinity;
-            for b in next_boards {
-            let (_, score) =
-                self.minmax_cutoff_inner(&b, depth - 1, false, beta.inverse(), alpha.inverse());
-            let score = score.inverse();
-                if score > best_score {
-                    best_board = Some(b);
-                    best_score = score;
-                }
+        best_score = EvaluatorScore::MinusInfinity;
+        for b in next_boards {
+            let (_, score) = self.minmax_cutoff_inner(&b, depth - 1, false, -beta, -alpha);
+            let score = -score;
+            if score > best_score {
+                best_board = Some(b);
+                best_score = score;
+            }
             alpha = alpha.max(score);
             if alpha >= beta {
                 // Cutoff: best score for the current player is better than the best guaranteed score for the other player.
                 // The game will never go down this path (and if it will, that's a bonus).
-                    break;
-                }
+                break;
             }
+        }
         self.add_transposition_entry(board, depth, best_score, (alpha, beta));
 
         (best_board, best_score)
@@ -319,10 +318,25 @@ mod tests {
         let board = BitBoard::new_setup();
 
         let mut engine = Engine::default();
-        let (b, _score) = engine.minmax_cutoff(&board, 8);
 
-        assert!(b.is_some());
+        let mut prev_board = board;
+        for depth in (1..=8).rev() {
+            let (b, score) = engine.minmax_cutoff(&prev_board, depth);
+            if let Some(b) = b {
+                println!(
+                    "Score: {}\n{}",
+                    score,
+                    prev_board
+                        .move_as_string(&b)
+                        .expect("a move the engine generated should be expressible")
+                );
+                prev_board = b;
+            } else {
+                println!("No more moves");
+                break;
+            }
+        }
 
-        // TODO: it should be a reasonable move
+        assert!(false);
     }
 }

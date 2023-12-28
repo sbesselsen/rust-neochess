@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt::Display};
+use std::{cmp::Ordering, fmt::Display, ops::Neg};
 
 use crate::bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK};
 
@@ -10,21 +10,6 @@ pub enum EvaluatorScore {
 }
 
 impl EvaluatorScore {
-    pub fn infinity_for(color: usize) -> EvaluatorScore {
-        match color {
-            COLOR_WHITE => EvaluatorScore::PlusInfinity,
-            _ => EvaluatorScore::MinusInfinity,
-        }
-    }
-
-    pub fn inverse(&self) -> EvaluatorScore {
-        match self {
-            EvaluatorScore::MinusInfinity => EvaluatorScore::PlusInfinity,
-            EvaluatorScore::PlusInfinity => EvaluatorScore::MinusInfinity,
-            EvaluatorScore::Value(v) => EvaluatorScore::Value(-v),
-        }
-    }
-
     pub fn is_finite(&self) -> bool {
         matches!(self, EvaluatorScore::Value(_))
     }
@@ -34,6 +19,18 @@ impl EvaluatorScore {
             EvaluatorScore::PlusInfinity => color == COLOR_WHITE,
             EvaluatorScore::MinusInfinity => color == COLOR_BLACK,
             _ => false,
+        }
+    }
+}
+
+impl Neg for EvaluatorScore {
+    type Output = EvaluatorScore;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            EvaluatorScore::MinusInfinity => EvaluatorScore::PlusInfinity,
+            EvaluatorScore::PlusInfinity => EvaluatorScore::MinusInfinity,
+            EvaluatorScore::Value(v) => EvaluatorScore::Value(-v),
         }
     }
 }
