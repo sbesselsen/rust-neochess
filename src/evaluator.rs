@@ -97,6 +97,7 @@ impl Display for EvaluatorScore {
 
 pub trait Evaluator {
     fn evaluate(&self, board: &BitBoard) -> EvaluatorScore;
+    fn order_moves(&self, prev_board: &BitBoard, boards: &mut Vec<BitBoard>);
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -140,6 +141,33 @@ impl Evaluator for DefaultEvaluator {
                     * (board.queens[COLOR_WHITE].count_ones() as f64
                         - board.queens[COLOR_BLACK].count_ones() as f64),
         )
+    }
+
+    fn order_moves(&self, prev_board: &BitBoard, boards: &mut Vec<BitBoard>) {
+        boards.sort_by_cached_key(|b| {
+            if b.is_check() {
+                // Checks go first!
+                return -10;
+            }
+            let promotion_rank_mask = if prev_board.active_color == COLOR_WHITE {
+                0x00FF000000000000
+            } else {
+                0x000000000000FF00
+            };
+            if (prev_board.pawns[prev_board.active_color] & !b.pawns[prev_board.active_color])
+                & promotion_rank_mask
+                > 0
+            {
+                // This is a promotion.
+                return -5;
+            }
+            if b.occupancy_bits_for(b.active_color) != prev_board.occupancy_bits_for(b.active_color)
+            {
+                // This is a capture.
+                return -1;
+            }
+            return 0;
+        });
     }
 }
 

@@ -249,31 +249,7 @@ impl Engine {
     }
 
     fn order_boards(&self, prev_board: &BitBoard, boards: &mut Vec<BitBoard>) {
-        // Do promotions and captures first.
-        boards.sort_by_cached_key(|b| {
-            if b.is_check() {
-                // Checks go first!
-                return -10;
-            }
-            let promotion_rank_mask = if prev_board.active_color == COLOR_WHITE {
-                0x00FF000000000000
-            } else {
-                0x000000000000FF00
-            };
-            if (prev_board.pawns[prev_board.active_color] & !b.pawns[prev_board.active_color])
-                & promotion_rank_mask
-                > 0
-            {
-                // This is a promotion.
-                return -5;
-            }
-            if b.occupancy_bits_for(b.active_color) != prev_board.occupancy_bits_for(b.active_color)
-            {
-                // This is a capture.
-                return -1;
-            }
-            return 0;
-        });
+        self.evaluator.order_moves(prev_board, boards);
     }
 }
 
@@ -380,5 +356,20 @@ mod tests {
                 "2r3k1/6r1/p3p3/3bQp1p/2pP4/P1P5/2B1R1qP/5RK1 w - - 1 2"
             )),
         );
+    }
+
+    #[test]
+    fn opening() {
+        let board = BitBoard::new_setup();
+
+        let mut engine = Engine::default();
+        let (b, score) = engine.minmax_cutoff(&board, 8);
+
+        assert!(b.is_some());
+        let b = b.unwrap();
+
+        println!("{b}");
+        println!("Score: {score}");
+        assert!(false);
     }
 }
