@@ -88,13 +88,18 @@ impl Engine {
         depth: u32,
     ) -> (Option<BitBoard>, EvaluatorScore) {
         assert!(depth > 0, "depth should be at least 1");
-        self.minmax_cutoff_inner(
+        let (b, score) = self.minmax_cutoff_inner(
             board,
             depth,
             true,
             EvaluatorScore::MinusInfinity,
             EvaluatorScore::PlusInfinity,
-        )
+        );
+        if board.active_color == COLOR_WHITE {
+            (b, score)
+        } else {
+            (b, score.inverse())
+        }
     }
 
     fn minmax_cutoff_inner(
@@ -102,27 +107,20 @@ impl Engine {
         board: &BitBoard,
         depth: u32,
         return_board: bool,
-        best_enforced_for_white: EvaluatorScore,
-        best_enforced_for_black: EvaluatorScore,
+        alpha: EvaluatorScore,
+        beta: EvaluatorScore,
     ) -> (Option<BitBoard>, EvaluatorScore) {
         if !return_board {
-            if let Some(TranspositionTableEntry { score, .. }) = self.get_transposition_entry(
-                board,
-                depth,
-                (best_enforced_for_white, best_enforced_for_black),
-            ) {
+            if let Some(TranspositionTableEntry { score, .. }) =
+                self.get_transposition_entry(board, depth, (alpha, beta))
+            {
                 return (None, score);
             }
         }
 
         if depth == 0 {
             let score = self.evaluator.evaluate(board);
-            self.add_transposition_entry(
-                board,
-                depth,
-                score,
-                (best_enforced_for_white, best_enforced_for_black),
-            );
+            self.add_transposition_entry(board, depth, score, (alpha, beta));
             return (None, score);
         }
 
@@ -131,77 +129,35 @@ impl Engine {
 
         if next_boards.is_empty() {
             let score = if board.is_check() {
-                EvaluatorScore::infinity_for(board.active_color).inverse()
+                EvaluatorScore::MinusInfinity
             } else {
                 EvaluatorScore::Value(0.0)
             };
-            self.add_transposition_entry(
-                board,
-                depth,
-                score,
-                (best_enforced_for_white, best_enforced_for_black),
-            );
+            self.add_transposition_entry(board, depth, score, (alpha, beta));
             return (None, score);
         }
 
-        let mut best_enforced_for_white = best_enforced_for_white;
-        let mut best_enforced_for_black = best_enforced_for_black;
+        let mut alpha = alpha;
         let mut best_board: Option<BitBoard> = None;
         let mut best_score: EvaluatorScore;
 
-        if board.active_color == COLOR_WHITE {
             best_score = EvaluatorScore::MinusInfinity;
             for b in next_boards {
-                let (_, score) = self.minmax_cutoff_inner(
-                    &b,
-                    depth - 1,
-                    false,
-                    best_enforced_for_white,
-                    best_enforced_for_black,
-                );
+            let (_, score) =
+                self.minmax_cutoff_inner(&b, depth - 1, false, beta.inverse(), alpha.inverse());
+            let score = score.inverse();
                 if score > best_score {
                     best_board = Some(b);
                     best_score = score;
                 }
-                best_enforced_for_white = best_enforced_for_white.max(score);
-                if score >= best_enforced_for_black {
-                    // Beta cutoff
+            alpha = alpha.max(score);
+            if alpha >= beta {
+                // Cutoff: best score for the current player is better than the best guaranteed score for the other player.
+                // The game will never go down this path (and if it will, that's a bonus).
                     break;
                 }
             }
-            self.add_transposition_entry(
-                board,
-                depth,
-                best_score,
-                (best_enforced_for_white, best_enforced_for_black),
-            );
-        } else {
-            best_score = EvaluatorScore::PlusInfinity;
-            for b in next_boards {
-                let (_, score) = self.minmax_cutoff_inner(
-                    &b,
-                    depth - 1,
-                    false,
-                    best_enforced_for_white,
-                    best_enforced_for_black,
-                );
-                if score < best_score {
-                    best_board = Some(b);
-                    best_score = score;
-                }
-                best_enforced_for_black = best_enforced_for_black.min(score);
-                if score <= best_enforced_for_white {
-                    // Alpha cutoff
-                    break;
-                }
-            }
-            self.add_transposition_entry(
-                board,
-                depth,
-                best_score,
-                (best_enforced_for_white, best_enforced_for_black),
-            );
-        }
+        self.add_transposition_entry(board, depth, best_score, (alpha, beta));
 
         (best_board, best_score)
     }
