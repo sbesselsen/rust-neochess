@@ -126,7 +126,9 @@ impl Engine {
             return (None, score);
         }
 
-        let next_boards = board.next_boards();
+        let mut next_boards = board.next_boards();
+        self.order_boards(board, &mut next_boards);
+
         if next_boards.is_empty() {
             let score = if board.is_check() {
                 EvaluatorScore::infinity_for(board.active_color).inverse()
@@ -245,6 +247,34 @@ impl Engine {
                 && e.bounds.1 >= bounds.1
         })
     }
+
+    fn order_boards(&self, prev_board: &BitBoard, boards: &mut Vec<BitBoard>) {
+        // Do promotions and captures first.
+        boards.sort_by_cached_key(|b| {
+            if b.is_check() {
+                // Checks go first!
+                return -10;
+            }
+            let promotion_rank_mask = if prev_board.active_color == COLOR_WHITE {
+                0x00FF000000000000
+            } else {
+                0x000000000000FF00
+            };
+            if (prev_board.pawns[prev_board.active_color] & !b.pawns[prev_board.active_color])
+                & promotion_rank_mask
+                > 0
+            {
+                // This is a promotion.
+                return -5;
+            }
+            if b.occupancy_bits_for(b.active_color) != prev_board.occupancy_bits_for(b.active_color)
+            {
+                // This is a capture.
+                return -1;
+            }
+            return 0;
+        });
+    }
 }
 
 #[cfg(test)]
@@ -302,8 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn transposition_test() {
-        // Taken from https://wtharvey.com/m8n2.txt
+    fn perf_test_1() {
         let board =
             BitBoard::try_parse_fen("5r2/8/1R6/ppk3p1/2N3P1/P4b2/1K6/5B2 w - - 0 1").unwrap();
 
@@ -314,6 +343,42 @@ mod tests {
         assert_eq!(
             b.map(|b| b.to_fen()),
             Some(String::from("5r2/8/8/pRk3p1/2N3P1/P4b2/1K6/5B2 b - - 1 1")),
+        );
+    }
+
+    #[test]
+    fn perf_test_2() {
+        let board =
+            BitBoard::try_parse_fen("5rk1/p1nnqr1p/1p1p4/3Pp2Q/5p1N/1P4PB/P2R1P1P/4R1K1 w - - 0 1")
+                .unwrap();
+
+        let mut engine = Engine::default();
+        let (b, _score) = engine.minmax_cutoff(&board, 8);
+
+        // It got the right move.
+        assert_eq!(
+            b.map(|b| b.to_fen()),
+            Some(String::from(
+                "5rk1/p1nnqr1p/1p1p4/3PpN1Q/5p2/1P4PB/P2R1P1P/4R1K1 b - - 1 1"
+            )),
+        );
+    }
+
+    #[test]
+    fn perf_test_3() {
+        let board =
+            BitBoard::try_parse_fen("2r3k1/6r1/p3p3/3bQp1p/2pP2q1/P1P5/2B1R1PP/5RK1 b - - 0 1")
+                .unwrap();
+
+        let mut engine = Engine::default();
+        let (b, _score) = engine.minmax_cutoff(&board, 8);
+
+        // It got the right move.
+        assert_eq!(
+            b.map(|b| b.to_fen()),
+            Some(String::from(
+                "2r3k1/6r1/p3p3/3bQp1p/2pP4/P1P5/2B1R1qP/5RK1 w - - 1 2"
+            )),
         );
     }
 }

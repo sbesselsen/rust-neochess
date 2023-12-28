@@ -857,6 +857,19 @@ impl BitBoard {
         })
     }
 
+    pub fn occupancy_bits(&self) -> u64 {
+        self.occupancy_bits_for(COLOR_WHITE) | self.occupancy_bits_for(COLOR_BLACK)
+    }
+
+    pub fn occupancy_bits_for(&self, color: usize) -> u64 {
+        self.pawns[color]
+            | self.rooks[color]
+            | self.knights[color]
+            | self.bishops[color]
+            | self.queens[color]
+            | self.king[color]
+    }
+
     fn rank_file_from_index(index: u32) -> (u32, u32) {
         debug_assert!(index < 64, "invalid square index");
         (8 - (index / 8), (index % 8 + 1))
@@ -1326,19 +1339,6 @@ impl BitBoard {
         }
 
         false
-    }
-
-    fn occupancy_bits(&self) -> u64 {
-        self.occupancy_bits_for(COLOR_WHITE) | self.occupancy_bits_for(COLOR_BLACK)
-    }
-
-    fn occupancy_bits_for(&self, color: usize) -> u64 {
-        self.pawns[color]
-            | self.rooks[color]
-            | self.knights[color]
-            | self.bishops[color]
-            | self.queens[color]
-            | self.king[color]
     }
 
     fn square_occupant_to_char(&self, index: u32) -> char {
