@@ -213,13 +213,13 @@ impl Engine {
     ) {
         let index = (board.zobrist_hash % (self.transposition_table.len() as u64)) as usize;
 
-        // In debug mode, check if something better is already in the table.
-        // Our code should not allow that to happen and it's not catastrophic, so
-        // only check during debug.
-        debug_assert!(!matches!(
+        if matches!(
             self.transposition_table[index],
-            Some(e) if e.depth >= depth && e.zobrist_hash == board.zobrist_hash
-        ));
+            Some(e) if e.depth > depth && e.zobrist_hash == board.zobrist_hash
+        ) {
+            // There is already a better entry in the table, computed to a greater depth.
+            return;
+        }
 
         // Write the new value.
         self.transposition_table[index].replace(TranspositionTableEntry {
