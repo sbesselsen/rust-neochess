@@ -63,7 +63,7 @@ impl From<EngineBuilder> for Engine {
             .evaluator
             .unwrap_or_else(|| Box::new(DefaultEvaluator::new()));
 
-        let transposition_table_size = builder.transposition_table_size.unwrap_or(10_000_000);
+        let transposition_table_size = builder.transposition_table_size.unwrap_or(1_000_000);
         let mut transposition_table: Vec<Option<TranspositionTableEntry>> =
             Vec::with_capacity(transposition_table_size);
         transposition_table.resize_with(transposition_table_size, || None);
