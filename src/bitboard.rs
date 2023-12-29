@@ -1275,7 +1275,7 @@ impl BitBoard {
                     let rook_index = self.active_color.wb(56, 0);
                     output.push(self.apply_move(|b| {
                         b.king[self.active_color].move_bit(king_index, king_index - 2);
-                        b.rooks[self.active_color].move_bit(rook_index, rook_index + 2);
+                        b.rooks[self.active_color].move_bit(rook_index, rook_index + 3);
                     }));
                 }
             }
