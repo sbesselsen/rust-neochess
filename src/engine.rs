@@ -150,7 +150,7 @@ impl Engine {
         for b in next_boards {
             let (_, score) = self.minmax_cutoff_inner(&b, depth - 1, false, -beta, -alpha);
             let score = -score;
-            if score > best_score {
+            if score > best_score || best_board.is_none() {
                 best_board = Some(b);
                 best_score = score;
             }
