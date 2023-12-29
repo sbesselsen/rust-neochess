@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    bitboard::{BitBoard, COLOR_WHITE},
+    bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE},
     evaluator::{DefaultEvaluator, Evaluator, EvaluatorScore},
 };
 
@@ -120,6 +120,11 @@ impl Engine {
 
         if depth == 0 {
             let score = self.evaluator.evaluate(board);
+            let score = if board.active_color == COLOR_BLACK {
+                -score
+            } else {
+                score
+            };
             self.add_transposition_entry(board, depth, score, (alpha, beta));
             return (None, score);
         }
@@ -311,32 +316,5 @@ mod tests {
                 "2r3k1/6r1/p3p3/3bQp1p/2pP4/P1P5/2B1R1qP/5RK1 w - - 1 2"
             )),
         );
-    }
-
-    #[test]
-    fn opening() {
-        let board = BitBoard::new_setup();
-
-        let mut engine = Engine::default();
-
-        let mut prev_board = board;
-        for depth in (1..=8).rev() {
-            let (b, score) = engine.minmax_cutoff(&prev_board, depth);
-            if let Some(b) = b {
-                println!(
-                    "Score: {}\n{}",
-                    score,
-                    prev_board
-                        .move_as_string(&b)
-                        .expect("a move the engine generated should be expressible")
-                );
-                prev_board = b;
-            } else {
-                println!("No more moves");
-                break;
-            }
-        }
-
-        assert!(false);
     }
 }
