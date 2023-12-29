@@ -1667,6 +1667,18 @@ mod tests {
     }
 
     #[test]
+    fn generated_position_3_moves_correctly() {
+        test_move_counts(
+            "6nr/2R5/k4p2/2P5/4p2p/7P/3rBPP1/1R4K1 b - - 0 42",
+            0,
+            2,
+            0,
+            0,
+            1,
+        );
+    }
+
+    #[test]
     fn castling_for_white_works() {
         let board = BitBoard::try_parse_fen(
             "r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
