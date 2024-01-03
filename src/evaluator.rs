@@ -148,6 +148,7 @@ impl Evaluator for DefaultEvaluator {
                 // Checks go first!
                 return -10;
             }
+
             let promotion_rank_mask = if prev_board.active_color == COLOR_WHITE {
                 RANK_0_MASK << 48
             } else {
@@ -160,12 +161,31 @@ impl Evaluator for DefaultEvaluator {
                 // This is a promotion.
                 return -5;
             }
-            if b.occupancy_bits_for(b.active_color) != prev_board.occupancy_bits_for(b.active_color)
-            {
-                // This is a capture.
-                return -1;
+
+            let self_occupancy = b.occupancy_bits_for(b.active_color);
+            let prev_self_occupancy = prev_board.occupancy_bits_for(b.active_color);
+
+            if self_occupancy != prev_self_occupancy {
+                let captured_mask = prev_self_occupancy & !self_occupancy;
+
+                // What was captured?
+                let captured_value = (prev_board.pawns[b.active_color] & captured_mask)
+                    .count_ones()
+                    + 5 * (prev_board.rooks[b.active_color] & captured_mask).count_ones()
+                    + 3 * (prev_board.knights[b.active_color] & captured_mask).count_ones()
+                    + 3 * (prev_board.bishops[b.active_color] & captured_mask).count_ones()
+                    + 9 * (prev_board.queens[b.active_color] & captured_mask).count_ones();
+
+                let capturer_value = (captured_mask & b.pawns[b.active_color]).count_ones()
+                    + 5 * (captured_mask & b.rooks[b.active_color]).count_ones()
+                    + 3 * (captured_mask & b.knights[b.active_color]).count_ones()
+                    + 3 * (captured_mask & b.bishops[b.active_color]).count_ones()
+                    + 9 * (captured_mask & b.queens[b.active_color]).count_ones();
+
+                // MVV-LVA
+                return (capturer_value - captured_value) as i32;
             }
-            return 0;
+            return 1;
         });
     }
 }
