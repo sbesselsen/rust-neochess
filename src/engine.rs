@@ -337,10 +337,8 @@ mod tests {
         );
     }
 
-    #[ignore]
     #[test]
     fn perf_test_2() {
-        // Something goes wrong with this test. Check this again later!
         let board =
             BitBoard::try_parse_fen("5rk1/p1nnqr1p/1p1p4/3Pp2Q/5p1N/1P4PB/P2R1P1P/4R1K1 w - - 0 1")
                 .unwrap();
