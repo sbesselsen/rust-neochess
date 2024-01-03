@@ -383,7 +383,7 @@ mod tests {
 
         let mut engine = Engine::default();
 
-        let (b, _score) = engine.minmax_cutoff(&board, 4);
+        let (b, _score) = engine.minmax_cutoff(&board, 9);
 
         assert!(b.is_some());
 

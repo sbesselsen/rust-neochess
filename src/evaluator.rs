@@ -169,23 +169,24 @@ impl Evaluator for DefaultEvaluator {
                 let captured_mask = prev_self_occupancy & !self_occupancy;
 
                 // What was captured?
-                let captured_value = (prev_board.pawns[b.active_color] & captured_mask)
+                let captured_value = (captured_mask & prev_board.pawns[b.active_color])
                     .count_ones()
-                    + 5 * (prev_board.rooks[b.active_color] & captured_mask).count_ones()
-                    + 3 * (prev_board.knights[b.active_color] & captured_mask).count_ones()
-                    + 3 * (prev_board.bishops[b.active_color] & captured_mask).count_ones()
-                    + 9 * (prev_board.queens[b.active_color] & captured_mask).count_ones();
+                    + 5 * (captured_mask & prev_board.rooks[b.active_color]).count_ones()
+                    + 3 * (captured_mask & prev_board.knights[b.active_color]).count_ones()
+                    + 3 * (captured_mask & prev_board.bishops[b.active_color]).count_ones()
+                    + 9 * (captured_mask & prev_board.queens[b.active_color]).count_ones();
 
-                let capturer_value = (captured_mask & b.pawns[b.active_color]).count_ones()
-                    + 5 * (captured_mask & b.rooks[b.active_color]).count_ones()
-                    + 3 * (captured_mask & b.knights[b.active_color]).count_ones()
-                    + 3 * (captured_mask & b.bishops[b.active_color]).count_ones()
-                    + 9 * (captured_mask & b.queens[b.active_color]).count_ones();
+                let capturer_value = (captured_mask & b.pawns[prev_board.active_color])
+                    .count_ones()
+                    + 5 * (captured_mask & b.rooks[prev_board.active_color]).count_ones()
+                    + 3 * (captured_mask & b.knights[prev_board.active_color]).count_ones()
+                    + 3 * (captured_mask & b.bishops[prev_board.active_color]).count_ones()
+                    + 9 * (captured_mask & b.queens[prev_board.active_color]).count_ones();
 
                 // MVV-LVA
                 return (capturer_value - captured_value) as i32;
             }
-            return 1;
+            return 100;
         });
     }
 }
