@@ -101,6 +101,7 @@ impl Engine {
             board,
             depth,
             true,
+            true,
             EvaluatorScore::MinusInfinity,
             EvaluatorScore::PlusInfinity,
         );
@@ -116,6 +117,7 @@ impl Engine {
         board: &BitBoard,
         depth: u32,
         return_board: bool,
+        allow_null: bool,
         alpha: EvaluatorScore,
         beta: EvaluatorScore,
     ) -> (Option<BitBoard>, EvaluatorScore) {
@@ -160,6 +162,26 @@ impl Engine {
             return (None, score);
         }
 
+        // Null move pruning
+        let null_move_depth_reduction = 2;
+        if allow_null && !return_board && depth > null_move_depth_reduction + 1 && !board.is_check()
+        {
+            let null_move_board = board.apply_move(|_| {});
+            let (_, null_move_score) = self.minmax_cutoff_inner(
+                &null_move_board,
+                depth - null_move_depth_reduction - 1,
+                false,
+                false,
+                -beta,
+                -alpha,
+            );
+            let null_move_score = -null_move_score;
+            if null_move_score >= beta {
+                // Null move pruning
+                return (None, beta);
+            }
+        }
+
         let mut next_boards = board.next_boards();
         self.order_boards(board, &mut next_boards);
 
@@ -176,7 +198,7 @@ impl Engine {
         let mut best_score = EvaluatorScore::MinusInfinity;
 
         for b in next_boards {
-            let (_, score) = self.minmax_cutoff_inner(&b, depth - 1, false, -beta, -alpha);
+            let (_, score) = self.minmax_cutoff_inner(&b, depth - 1, false, true, -beta, -alpha);
             let score = -score;
             if score > best_score || best_board.is_none() {
                 best_board = Some(b);
