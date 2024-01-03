@@ -2,20 +2,51 @@ use neochess::{bitboard::BitBoard, engine::Engine};
 use std::io::{stdin, BufRead};
 
 fn main() {
-    let depth = 8;
+    let depth = 6;
 
     let mut engine = Engine::default();
     let mut board = BitBoard::new_setup();
 
-    let input = read_option("Play as (w/b): ", vec!["w", "b"]);
-    if input == "b" {
-        let (b, _) = engine.minmax_cutoff(&board, depth);
-        let b = b.expect("first move should always yield a board");
-        println!(
-            "My move: {}",
-            board.move_as_string(&b).expect("first move must be valid")
-        );
-        board = b;
+    let input = read_option("Play as (w/b/fen): ", vec!["w", "b", "fen"]);
+    match &input[..] {
+        "fen" => loop {
+            let input = read_line("FEN: ");
+            let parsed_board = BitBoard::try_parse_fen(&input[..]);
+            match parsed_board {
+                Err(_) => {
+                    println!("Invalid FEN!");
+                }
+                Ok(b) => {
+                    board = b;
+                    let (b, _) = engine.minmax_cutoff(&board, depth);
+                    match b {
+                        None => {
+                            println!("No move found");
+                        }
+                        Some(b) => {
+                            println!(
+                                "My move: {}",
+                                board.move_as_string(&b).expect("engine move must be valid")
+                            );
+
+                            // Continue from here.
+                            board = b;
+                        }
+                    }
+                    break;
+                }
+            }
+        },
+        "b" => {
+            let (b, _) = engine.minmax_cutoff(&board, depth);
+            let b = b.expect("first move should always yield a board");
+            println!(
+                "My move: {}",
+                board.move_as_string(&b).expect("first move must be valid")
+            );
+            board = b;
+        }
+        _ => {}
     }
 
     loop {
@@ -71,17 +102,25 @@ fn main() {
 }
 
 fn read_option(input: &str, options: Vec<&str>) -> String {
+    loop {
+        let option = read_line(input);
+        if options.contains(&&option[..]) {
+            return option.to_string();
+        }
+        println!("Invalid input");
+    }
+}
+
+fn read_line(input: &str) -> String {
     println!("{}", input);
     let mut buf = String::new();
     loop {
         let result = stdin().lock().read_line(&mut buf);
         if let Ok(_) = result {
             let option = buf.trim_end();
-            if options.contains(&option) {
-                return option.to_string();
-            }
+            return String::from(option);
         }
         buf.clear();
-        println!("Invalid input");
+        println!("Error reading input");
     }
 }
