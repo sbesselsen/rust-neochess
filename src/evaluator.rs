@@ -65,9 +65,11 @@ impl Ord for EvaluatorScore {
             return Ordering::Equal;
         }
         match (self, other) {
+            (EvaluatorScore::MinusInfinity, EvaluatorScore::MinusInfinity) => Ordering::Equal,
             (EvaluatorScore::MinusInfinity, _) => Ordering::Less,
-            (EvaluatorScore::PlusInfinity, _) => Ordering::Greater,
             (_, EvaluatorScore::MinusInfinity) => Ordering::Greater,
+            (EvaluatorScore::PlusInfinity, EvaluatorScore::PlusInfinity) => Ordering::Equal,
+            (EvaluatorScore::PlusInfinity, _) => Ordering::Greater,
             (_, EvaluatorScore::PlusInfinity) => Ordering::Less,
             (EvaluatorScore::Value(x), EvaluatorScore::Value(y)) => {
                 if x < y {
