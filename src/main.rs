@@ -2,7 +2,7 @@ use neochess::{bitboard::BitBoard, engine::Engine};
 use std::io::{stdin, BufRead};
 
 fn main() {
-    let depth = 6;
+    let depth = 8;
 
     let mut engine = Engine::default();
     let mut board = BitBoard::new_setup();
