@@ -379,6 +379,7 @@ mod tests {
 
         let mut engine = Engine::default();
 
+        // TODO: this fails if we increase the depth to 8!
         let (b, _score) = engine.minmax_cutoff(&board, 6);
 
         assert!(b.is_some());
