@@ -2154,4 +2154,15 @@ mod tests {
         assert_eq!(board.perft(3), 89_890);
         assert_eq!(board.perft(4), 3_894_594);
     }
+
+    #[test]
+    fn perft_chessprogramming() {
+        // See https://www.chessprogramming.net/is-perft-speed-important/
+        let board = BitBoard::try_parse_fen(
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0",
+        )
+        .unwrap();
+
+        assert_eq!(board.perft(5), 193_690_690);
+    }
 }
