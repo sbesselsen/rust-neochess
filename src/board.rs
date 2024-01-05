@@ -951,7 +951,7 @@ impl Board {
         None
     }
 
-    pub fn apply_mutation<F>(&self, f: F) -> Board
+    pub fn apply_raw_mutation<F>(&self, f: F) -> Board
     where
         F: FnOnce(&mut Board),
     {
@@ -960,11 +960,11 @@ impl Board {
         clone
     }
 
-    pub fn apply_move<F>(&self, f: F) -> Board
+    pub fn apply_mutation<F>(&self, f: F) -> Board
     where
         F: FnOnce(&mut Board),
     {
-        self.apply_mutation(|b| {
+        self.apply_raw_mutation(|b| {
             b.en_passant_square = None;
             f(b);
             if b.active_color == COLOR_WHITE {
@@ -1073,7 +1073,7 @@ impl Board {
 
         for (index, to_mask) in self.knight_moves_masks(self.knights[self.active_color]) {
             for to_index in to_mask.as_bit_index_iter() {
-                output.push(self.apply_move(|b| {
+                output.push(self.apply_mutation(|b| {
                     b.knights[self.active_color].move_bit(index, to_index);
                     if opponent_occupancy.bit_at_index(to_index) {
                         b.clear_square(opponent_color, to_index);
@@ -1144,7 +1144,7 @@ impl Board {
 
         for (index, to_mask) in self.rooklike_moves_masks(rooklike_mask) {
             for to_index in to_mask.as_bit_index_iter() {
-                output.push(self.apply_move(|b| {
+                output.push(self.apply_mutation(|b| {
                     b.queens[self.active_color].move_bit(index, to_index);
                     b.rooks[self.active_color].move_bit(index, to_index);
                     if opponent_occupancy.bit_at_index(to_index) {
@@ -1219,7 +1219,7 @@ impl Board {
 
         for (index, to_mask) in self.bishoplike_moves_masks(bishoplike_mask) {
             for to_index in to_mask.as_bit_index_iter() {
-                output.push(self.apply_move(|b| {
+                output.push(self.apply_mutation(|b| {
                     b.queens[self.active_color].move_bit(index, to_index);
                     b.bishops[self.active_color].move_bit(index, to_index);
                     if opponent_occupancy.bit_at_index(to_index) {
@@ -1247,7 +1247,7 @@ impl Board {
         for to_index in (move_1_mask & !promote_mask).as_bit_index_iter() {
             // Normal move forward.
             let from_index = (to_index as i32) - move_offset;
-            output.push(self.apply_move(|b| {
+            output.push(self.apply_mutation(|b| {
                 b.pawns[self.active_color].move_bit(from_index as u32, to_index);
             }));
         }
@@ -1265,7 +1265,7 @@ impl Board {
             let en_passant_index = (to_index as i32) - move_offset;
             let from_index = en_passant_index - move_offset;
 
-            output.push(self.apply_move(|b| {
+            output.push(self.apply_mutation(|b| {
                 b.pawns[self.active_color].move_bit(from_index as u32, to_index);
                 b.en_passant_square = Some(en_passant_index as u32);
             }));
@@ -1296,36 +1296,36 @@ impl Board {
 
         if self.en_passant_square == Some(to_index) {
             // Avoid the brick.
-            output.push(self.apply_move(|b| {
+            output.push(self.apply_mutation(|b| {
                 let clear_index = self.active_color.wb(to_index + 8, to_index - 8);
                 b.pawns[self.active_color].move_bit(from_index, to_index);
                 b.clear_square(opponent_color, clear_index);
             }));
         } else if !(8..=56).contains(&to_index) {
             // This is a capture with promotion.
-            output.push(self.apply_move(|b| {
+            output.push(self.apply_mutation(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.rooks[self.active_color].set_bit(to_index, true);
                 b.clear_square(opponent_color, to_index);
             }));
-            output.push(self.apply_move(|b| {
+            output.push(self.apply_mutation(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.bishops[self.active_color].set_bit(to_index, true);
                 b.clear_square(opponent_color, to_index);
             }));
-            output.push(self.apply_move(|b| {
+            output.push(self.apply_mutation(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.knights[self.active_color].set_bit(to_index, true);
                 b.clear_square(opponent_color, to_index);
             }));
-            output.push(self.apply_move(|b| {
+            output.push(self.apply_mutation(|b| {
                 b.pawns[self.active_color].set_bit(from_index, false);
                 b.queens[self.active_color].set_bit(to_index, true);
                 b.clear_square(opponent_color, to_index);
             }));
         } else {
             // This is a normal capture.
-            output.push(self.apply_move(|b| {
+            output.push(self.apply_mutation(|b| {
                 b.pawns[self.active_color].move_bit(from_index, to_index);
                 b.clear_square(opponent_color, to_index);
             }));
@@ -1333,19 +1333,19 @@ impl Board {
     }
 
     fn push_pawn_promotions(&self, from_index: u32, to_index: u32, output: &mut Vec<Board>) {
-        output.push(self.apply_move(|b| {
+        output.push(self.apply_mutation(|b| {
             b.pawns[self.active_color].set_bit(from_index, false);
             b.rooks[self.active_color].set_bit(to_index, true);
         }));
-        output.push(self.apply_move(|b| {
+        output.push(self.apply_mutation(|b| {
             b.pawns[self.active_color].set_bit(from_index, false);
             b.bishops[self.active_color].set_bit(to_index, true);
         }));
-        output.push(self.apply_move(|b| {
+        output.push(self.apply_mutation(|b| {
             b.pawns[self.active_color].set_bit(from_index, false);
             b.knights[self.active_color].set_bit(to_index, true);
         }));
-        output.push(self.apply_move(|b| {
+        output.push(self.apply_mutation(|b| {
             b.pawns[self.active_color].set_bit(from_index, false);
             b.queens[self.active_color].set_bit(to_index, true);
         }));
@@ -1383,7 +1383,7 @@ impl Board {
         for index in self.king[self.active_color].as_bit_index_iter() {
             let mask = u64::from_bit(index);
             for to_index in self.king_moves_mask(mask).as_bit_index_iter() {
-                output.push(self.apply_move(|b| {
+                output.push(self.apply_mutation(|b| {
                     b.king[self.active_color].move_bit(index, to_index);
                     if opponent_occupancy.bit_at_index(to_index) {
                         b.clear_square(opponent_color, to_index);
@@ -1400,7 +1400,7 @@ impl Board {
                     // We can castle.
                     let king_index = self.active_color.wb(60, 4);
                     let rook_index = self.active_color.wb(63, 7);
-                    output.push(self.apply_move(|b| {
+                    output.push(self.apply_mutation(|b| {
                         b.king[self.active_color].move_bit(king_index, king_index + 2);
                         b.rooks[self.active_color].move_bit(rook_index, rook_index - 2);
                     }));
@@ -1415,7 +1415,7 @@ impl Board {
                     // We can castle.
                     let king_index = self.active_color.wb(60, 4);
                     let rook_index = self.active_color.wb(56, 0);
-                    output.push(self.apply_move(|b| {
+                    output.push(self.apply_mutation(|b| {
                         b.king[self.active_color].move_bit(king_index, king_index - 2);
                         b.rooks[self.active_color].move_bit(rook_index, rook_index + 3);
                     }));
@@ -1923,13 +1923,13 @@ mod tests {
         let board =
             Board::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1").unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(25, 17);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("b6")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(25, 18);
             b.rooks[COLOR_BLACK].set_bit(18, false);
         });
@@ -1939,7 +1939,7 @@ mod tests {
         let board =
             Board::try_parse_fen("2b1K3/B2P2k1/2r2pnn/1P2P2B/5pPq/4R3/3p1R2/8 b - - 0 1").unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.pawns[COLOR_BLACK].move_bit(37, 44);
             b.rooks[COLOR_WHITE].set_bit(44, false);
         });
@@ -1949,7 +1949,7 @@ mod tests {
         let board =
             Board::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1").unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].set_bit(11, false);
             b.queens[COLOR_WHITE].set_bit(2, true);
             b.bishops[COLOR_BLACK].set_bit(2, false);
@@ -1961,7 +1961,7 @@ mod tests {
             Board::try_parse_fen("rnbqkbnr/pppppppp/2P5/8/8/8/PP1PPPPP/RNBQKBNR w KQkq - 0 1")
                 .unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(18, 11);
             b.pawns[COLOR_BLACK].set_bit(11, false);
         });
@@ -1972,7 +1972,7 @@ mod tests {
             Board::try_parse_fen("r2bkbnr/pppppppp/2P5/8/8/4P3/PP2PPPP/RNBQKBNR w KQkq - 0 1")
                 .unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(18, 11);
             b.pawns[COLOR_BLACK].set_bit(11, false);
         });
@@ -1987,21 +1987,21 @@ mod tests {
         )
         .unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.rooks[COLOR_WHITE].move_bit(63, 61);
             b.king[COLOR_WHITE].move_bit(60, 62);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("O-O")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.rooks[COLOR_WHITE].move_bit(56, 59);
             b.king[COLOR_WHITE].move_bit(60, 58);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("O-O-O")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.king[COLOR_WHITE].move_bit(60, 61);
         });
         let notation = board.move_as_string(&board2);
@@ -2010,14 +2010,14 @@ mod tests {
         let mut board = board.clone();
         board.active_color = COLOR_BLACK;
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.king[COLOR_BLACK].move_bit(4, 6);
             b.rooks[COLOR_BLACK].move_bit(7, 5);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("O-O")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.king[COLOR_BLACK].move_bit(4, 2);
             b.rooks[COLOR_BLACK].move_bit(0, 3);
         });
@@ -2026,7 +2026,7 @@ mod tests {
 
         let board =
             Board::try_parse_fen("6K1/q7/P3k2P/N1r1P2P/b2R1p2/3p3N/b1b1B1p1/8 b - - 0 1").unwrap();
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.king[COLOR_BLACK].move_bit(20, 28);
             b.pawns[COLOR_WHITE].set_bit(28, false);
         });
@@ -2039,13 +2039,13 @@ mod tests {
         let board =
             Board::try_parse_fen("1R3K1B/2Pp4/2p5/2r5/2P3k1/1n1P2P1/p6r/q6N b - - 0 1").unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.rooks[COLOR_BLACK].move_bit(26, 29);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Rf5+")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.rooks[COLOR_BLACK].move_bit(26, 31);
         });
         let notation = board.move_as_string(&board2);
@@ -2053,7 +2053,7 @@ mod tests {
 
         let board =
             Board::try_parse_fen("1R3K1B/2Pp3r/2p5/8/2P3k1/1n1P2P1/p6r/q6N b - - 0 1").unwrap();
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.rooks[COLOR_BLACK].move_bit(15, 31);
         });
         let notation = board.move_as_string(&board2);
@@ -2065,19 +2065,19 @@ mod tests {
         let board =
             Board::try_parse_fen("R3R3/1k5p/5PP1/3qP3/n5K1/1P2PN1N/p1r3B1/5N2 w - - 0 1").unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.knights[COLOR_WHITE].move_bit(45, 35);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Nd4")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.knights[COLOR_WHITE].move_bit(45, 51);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Nf3d2")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.knights[COLOR_WHITE].move_bit(45, 62);
         });
         let notation = board.move_as_string(&board2);
@@ -2089,19 +2089,19 @@ mod tests {
         let board =
             Board::try_parse_fen("6K1/q7/P3k2P/N1r1P2P/b2R1p2/3p3N/b1b1B1p1/8 b - - 0 1").unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.bishops[COLOR_BLACK].move_bit(48, 34);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Bc4")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.bishops[COLOR_BLACK].move_bit(48, 57);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Bab1")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.bishops[COLOR_BLACK].move_bit(48, 41);
         });
         let notation = board.move_as_string(&board2);
@@ -2113,19 +2113,19 @@ mod tests {
         let board =
             Board::try_parse_fen("3Nbk2/1pP5/4B2K/PN2B3/3Q3p/1q1qrP2/p7/3q4 b - - 0 1").unwrap();
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.queens[COLOR_BLACK].move_bit(43, 35);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Qxd4")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.queens[COLOR_BLACK].move_bit(43, 50);
         });
         let notation = board.move_as_string(&board2);
         assert_eq!(notation, Some(String::from("Qd3c2")));
 
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.queens[COLOR_BLACK].move_bit(41, 34);
         });
         let notation = board.move_as_string(&board2);
@@ -2150,13 +2150,13 @@ mod tests {
         let board = Board::new_setup();
 
         // Check if a move yields a new hash.
-        let board2 = board.apply_move(|b| {
+        let board2 = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(48, 40);
         });
         assert_ne!(board2.zobrist_hash, board.zobrist_hash);
 
         // Check if doing the same thing with a new board yields the same hash.
-        let board3 = Board::new_setup().apply_move(|b| {
+        let board3 = Board::new_setup().apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(48, 40);
         });
         assert_eq!(board3.zobrist_hash, board2.zobrist_hash);
@@ -2164,41 +2164,41 @@ mod tests {
         // Move the knights forward and back to their starting point,
         // check if we get the same hash again.
         let board4 = board2
-            .apply_move(|b| {
+            .apply_mutation(|b| {
                 b.knights[COLOR_BLACK].move_bit(1, 18);
             })
-            .apply_move(|b| {
+            .apply_mutation(|b| {
                 b.knights[COLOR_WHITE].move_bit(57, 42);
             })
-            .apply_move(|b| {
+            .apply_mutation(|b| {
                 b.knights[COLOR_BLACK].move_bit(18, 1);
             })
-            .apply_move(|b| {
+            .apply_mutation(|b| {
                 b.knights[COLOR_WHITE].move_bit(42, 57);
             });
         assert_eq!(board4.zobrist_hash, board2.zobrist_hash);
 
         // Move forward with en passant vs 2 moves in sequence,
         // check that we get different hashes.
-        let board5 = board.apply_move(|b| {
+        let board5 = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(48, 32);
             b.en_passant_square = Some(40);
         });
         let board6 = board
-            .apply_move(|b| {
+            .apply_mutation(|b| {
                 b.pawns[COLOR_WHITE].move_bit(48, 40);
             })
-            .apply_move(|_| {})
-            .apply_move(|b| {
+            .apply_mutation(|_| {})
+            .apply_mutation(|b| {
                 b.pawns[COLOR_WHITE].move_bit(40, 32);
             });
         assert_ne!(board5.zobrist_hash, board6.zobrist_hash);
 
         // Check that the hashes even out after the next move.
-        let board5b = board5.apply_move(|b| {
+        let board5b = board5.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(32, 24);
         });
-        let board6b = board6.apply_move(|b| {
+        let board6b = board6.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(32, 24);
         });
         assert_eq!(board5b.zobrist_hash, board6b.zobrist_hash);
@@ -2208,13 +2208,13 @@ mod tests {
     fn zobrist_hash_castling() {
         let board = Board::new_setup();
         let board2 = board
-            .apply_move(|b| {
+            .apply_mutation(|b| {
                 b.can_castle[COLOR_WHITE][SIDE_QUEEN] = false;
             })
-            .apply_move(|_| {});
+            .apply_mutation(|_| {});
         assert_ne!(board.zobrist_hash, board2.zobrist_hash);
 
-        let board2 = board.apply_move(|_| {}).apply_move(|b| {
+        let board2 = board.apply_mutation(|_| {}).apply_mutation(|b| {
             b.can_castle[COLOR_BLACK][SIDE_KING] = false;
         });
         let incremental_hash = board2.zobrist_hash;
@@ -2304,19 +2304,19 @@ mod tests {
         assert_eq!(halfmove_clock, 5);
         assert_eq!(board.active_color, COLOR_WHITE);
 
-        let b = board.apply_move(|b| {
+        let b = board.apply_mutation(|b| {
             b.bishops[COLOR_WHITE].move_bit(12, 19);
         });
 
         assert_eq!(b.halfmove_clock, halfmove_clock + 1);
 
-        let b = board.apply_move(|b| {
+        let b = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(22, 14);
         });
 
         assert_eq!(b.halfmove_clock, 0);
 
-        let b = board.apply_move(|b| {
+        let b = board.apply_mutation(|b| {
             b.bishops[COLOR_WHITE].move_bit(43, 57);
             b.queens[COLOR_BLACK].set_bit(57, false);
         });

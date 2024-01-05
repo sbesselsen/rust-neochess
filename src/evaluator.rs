@@ -202,15 +202,15 @@ mod tests {
     #[test]
     fn dead_kings() {
         let eval = DefaultEvaluator::new();
-        let board = Board::new_setup().apply_move(|b| {
+        let board = Board::new_setup().apply_mutation(|b| {
             b.king[COLOR_WHITE] = 0;
         });
         assert_eq!(eval.evaluate(&board), EvaluatorScore::MinusInfinity);
-        let board = Board::new_setup().apply_move(|b| {
+        let board = Board::new_setup().apply_mutation(|b| {
             b.king[COLOR_BLACK] = 0;
         });
         assert_eq!(eval.evaluate(&board), EvaluatorScore::PlusInfinity);
-        let board = Board::new_setup().apply_move(|b| {
+        let board = Board::new_setup().apply_mutation(|b| {
             b.king[COLOR_WHITE] = 0;
             b.king[COLOR_BLACK] = 0;
         });

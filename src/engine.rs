@@ -162,7 +162,7 @@ impl Engine {
         let null_move_depth_reduction = 2;
         if allow_null && !return_board && depth > null_move_depth_reduction + 1 && !board.is_check()
         {
-            let null_move_board = board.apply_move(|_| {});
+            let null_move_board = board.apply_mutation(|_| {});
             let (_, null_move_score) = self.minmax_cutoff_inner(
                 &null_move_board,
                 depth - null_move_depth_reduction - 1,
@@ -400,7 +400,7 @@ mod tests {
 
         assert_eq!(board.move_as_string(&b), Some(String::from("Qxa4")));
 
-        let board = b.apply_move(|b| {
+        let board = b.apply_mutation(|b| {
             b.knights[COLOR_WHITE].move_bit(21, 31);
             b.queens[COLOR_BLACK] = 0;
         });
