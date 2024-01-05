@@ -26,7 +26,7 @@ fn main() {
                         Some(b) => {
                             println!(
                                 "My move: {}",
-                                board.move_as_string(&b).expect("engine move must be valid")
+                                b.as_move_string(&board).expect("engine move must be valid")
                             );
 
                             // Continue from here.
@@ -42,7 +42,7 @@ fn main() {
             let b = b.expect("first move should always yield a board");
             println!(
                 "My move: {}",
-                board.move_as_string(&b).expect("first move must be valid")
+                b.as_move_string(&board).expect("first move must be valid")
             );
             board = b;
         }
@@ -55,8 +55,7 @@ fn main() {
             .into_iter()
             .map(|b| {
                 (
-                    board
-                        .move_as_string(&b)
+                    b.as_move_string(&board)
                         .expect("engine-generated boards should always be a valid move"),
                     b,
                 )
@@ -85,8 +84,8 @@ fn main() {
             board = b;
             println!(
                 "My move: {}",
-                player_move_board
-                    .move_as_string(&board)
+                board
+                    .as_move_string(&player_move_board)
                     .expect("player move must be valid")
             );
         } else {

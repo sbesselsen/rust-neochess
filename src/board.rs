@@ -609,15 +609,15 @@ impl Board {
         None
     }
 
-    pub fn move_as_string(&self, after_move: &Board) -> Option<String> {
+    pub fn as_move_string(&self, prev_board: &Board) -> Option<String> {
         let BoardMove {
             from_index,
             to_index,
             promote_to,
-        } = self.as_board_move(after_move)?;
+        } = self.as_board_move(prev_board)?;
 
-        let check_suffix = if after_move.is_check() {
-            if after_move.is_checkmate() {
+        let check_suffix = if self.is_check() {
+            if self.is_checkmate() {
                 "#"
             } else {
                 "+"
@@ -626,10 +626,10 @@ impl Board {
             ""
         };
 
-        let (piece, _) = self.piece_at_index(from_index).expect(
+        let (piece, _) = prev_board.piece_at_index(from_index).expect(
             "piece should exist at from_index if board move was computed by .as_board_move()",
         );
-        let target = self.piece_at_index(to_index);
+        let target = prev_board.piece_at_index(to_index);
         let capture_mark = if target.is_some() { "x" } else { "" };
 
         match piece {
@@ -665,22 +665,23 @@ impl Board {
 
                 // Create a board which is like the board after the move, only our moved piece is still in
                 // the original spot. That will allow us to calculate sightlines properly.
-                let mut sightlines_board = after_move.clone();
-                sightlines_board.rooks[self.active_color] |= self.rooks[self.active_color];
+                let mut sightlines_board = self.clone();
+                sightlines_board.rooks[prev_board.active_color] |=
+                    prev_board.rooks[prev_board.active_color];
 
                 let other_rooks = sightlines_board
                     .rooklike_moves_masks(to_mask)
                     .map(|(_, m)| m)
                     .reduce(|a, b| a | b)
                     .unwrap_or(0)
-                    & after_move.rooks[self.active_color];
+                    & self.rooks[prev_board.active_color];
 
                 if other_rooks > 0 {
                     // Two rooks could have moved here; we need to differentiate between them.
                     let (from_rank, from_file) = Self::rank_file_from_index(from_index);
 
-                    let moved_rook =
-                        self.rooks[self.active_color] & !after_move.rooks[self.active_color];
+                    let moved_rook = prev_board.rooks[prev_board.active_color]
+                        & !self.rooks[prev_board.active_color];
                     let rooks_on_same_file = ((other_rooks | moved_rook)
                         & (FILE_0_MASK >> (from_file - 1)))
                         .count_ones()
@@ -711,19 +712,19 @@ impl Board {
 
                 let (to_rank, to_file) = Self::rank_file_from_index(to_index);
 
-                let other_knights = after_move
+                let other_knights = self
                     .knight_moves_masks(to_mask)
                     .map(|(_, m)| m)
                     .reduce(|a, b| a | b)
                     .unwrap_or(0)
-                    & after_move.knights[self.active_color];
+                    & self.knights[prev_board.active_color];
 
                 if other_knights > 0 {
                     // Two knights could have moved here; we need to differentiate between them.
                     let (from_rank, from_file) = Self::rank_file_from_index(from_index);
 
-                    let moved_knight =
-                        self.knights[self.active_color] & !after_move.knights[self.active_color];
+                    let moved_knight = prev_board.knights[prev_board.active_color]
+                        & !self.knights[prev_board.active_color];
 
                     let knights_on_same_file = ((other_knights | moved_knight)
                         & (FILE_0_MASK >> (from_file - 1)))
@@ -757,22 +758,23 @@ impl Board {
 
                 // Create a board which is like the board after the move, only our moved piece is still in
                 // the original spot. That will allow us to calculate sightlines properly.
-                let mut sightlines_board = after_move.clone();
-                sightlines_board.bishops[self.active_color] |= self.bishops[self.active_color];
+                let mut sightlines_board = self.clone();
+                sightlines_board.bishops[prev_board.active_color] |=
+                    prev_board.bishops[prev_board.active_color];
 
                 let other_bishops = sightlines_board
                     .bishoplike_moves_masks(to_mask)
                     .map(|(_, m)| m)
                     .reduce(|a, b| a | b)
                     .unwrap_or(0)
-                    & after_move.bishops[self.active_color];
+                    & self.bishops[prev_board.active_color];
 
                 if other_bishops > 0 {
                     // Two bishops could have moved here; we need to differentiate between them.
                     let (from_rank, from_file) = Self::rank_file_from_index(from_index);
 
-                    let moved_bishop =
-                        self.bishops[self.active_color] & !after_move.bishops[self.active_color];
+                    let moved_bishop = prev_board.bishops[prev_board.active_color]
+                        & !self.bishops[prev_board.active_color];
 
                     let bishops_on_same_file = ((other_bishops | moved_bishop)
                         & (FILE_0_MASK >> (from_file - 1)))
@@ -806,8 +808,9 @@ impl Board {
 
                 // Create a board which is like the board after the move, only our moved piece is still in
                 // the original spot. That will allow us to calculate sightlines properly.
-                let mut sightlines_board = after_move.clone();
-                sightlines_board.queens[self.active_color] |= self.queens[self.active_color];
+                let mut sightlines_board = self.clone();
+                sightlines_board.queens[prev_board.active_color] |=
+                    prev_board.queens[prev_board.active_color];
 
                 let other_queens = (sightlines_board
                     .rooklike_moves_masks(to_mask)
@@ -819,14 +822,14 @@ impl Board {
                         .map(|(_, m)| m)
                         .reduce(|a, b| a | b)
                         .unwrap_or(0))
-                    & after_move.queens[self.active_color];
+                    & self.queens[prev_board.active_color];
 
                 if other_queens > 0 {
                     // Two queens could have moved here; we need to differentiate between them.
                     let (from_rank, from_file) = Self::rank_file_from_index(from_index);
 
-                    let moved_queen =
-                        self.queens[self.active_color] & !after_move.queens[self.active_color];
+                    let moved_queen = prev_board.queens[prev_board.active_color]
+                        & !self.queens[prev_board.active_color];
 
                     let queens_on_same_file = ((other_queens | moved_queen)
                         & (FILE_0_MASK >> (from_file - 1)))
@@ -854,19 +857,20 @@ impl Board {
                 ))
             }
             Piece::King => {
-                let moved_king = self.king[self.active_color] & !after_move.king[self.active_color];
+                let moved_king =
+                    prev_board.king[prev_board.active_color] & !self.king[prev_board.active_color];
 
-                let home_rank_offset = self.active_color.wb(56, 0);
-                if self.can_castle[self.active_color][SIDE_KING]
+                let home_rank_offset = prev_board.active_color.wb(56, 0);
+                if prev_board.can_castle[prev_board.active_color][SIDE_KING]
                     && moved_king.bit_at_index(home_rank_offset + 4)
-                    && after_move.king[self.active_color].bit_at_index(home_rank_offset + 6)
+                    && self.king[prev_board.active_color].bit_at_index(home_rank_offset + 6)
                 {
                     // Castling kingside.
                     return Some(String::from("O-O"));
                 }
-                if self.can_castle[self.active_color][SIDE_QUEEN]
+                if prev_board.can_castle[prev_board.active_color][SIDE_QUEEN]
                     && moved_king.bit_at_index(home_rank_offset + 4)
-                    && after_move.king[self.active_color].bit_at_index(home_rank_offset + 2)
+                    && self.king[prev_board.active_color].bit_at_index(home_rank_offset + 2)
                 {
                     // Castling queenside.
                     return Some(String::from("O-O-O"));
@@ -881,30 +885,31 @@ impl Board {
         }
     }
 
-    pub fn as_board_move(&self, after_move: &Board) -> Option<BoardMove> {
-        let moved_pawns = self.pawns[self.active_color] & !after_move.pawns[self.active_color];
+    pub fn as_board_move(&self, prev_board: &Board) -> Option<BoardMove> {
+        let moved_pawns =
+            prev_board.pawns[prev_board.active_color] & !self.pawns[prev_board.active_color];
         if moved_pawns > 0 {
             let from_index = moved_pawns.leading_zeros();
-            let mut to_index = (after_move.pawns[self.active_color]
-                & !self.pawns[self.active_color])
+            let mut to_index = (self.pawns[prev_board.active_color]
+                & !prev_board.pawns[prev_board.active_color])
                 .leading_zeros();
 
             if to_index == 64 {
                 // Pawn promotion.
-                let new_queen_index = (after_move.queens[self.active_color]
-                    & !self.queens[self.active_color])
+                let new_queen_index = (self.queens[prev_board.active_color]
+                    & !prev_board.queens[prev_board.active_color])
                     .leading_zeros();
 
-                let new_rook_index = (after_move.rooks[self.active_color]
-                    & !self.rooks[self.active_color])
+                let new_rook_index = (self.rooks[prev_board.active_color]
+                    & !prev_board.rooks[prev_board.active_color])
                     .leading_zeros();
 
-                let new_knight_index = (after_move.knights[self.active_color]
-                    & !self.knights[self.active_color])
+                let new_knight_index = (self.knights[prev_board.active_color]
+                    & !prev_board.knights[prev_board.active_color])
                     .leading_zeros();
 
-                let new_bishop_index = (after_move.bishops[self.active_color]
-                    & !self.bishops[self.active_color])
+                let new_bishop_index = (self.bishops[prev_board.active_color]
+                    & !prev_board.bishops[prev_board.active_color])
                     .leading_zeros();
 
                 if new_queen_index < 64 {
@@ -932,44 +937,52 @@ impl Board {
             return Some(BoardMove::new(from_index, to_index));
         };
 
-        let moved_king = self.king[self.active_color] & !after_move.king[self.active_color];
+        let moved_king =
+            prev_board.king[prev_board.active_color] & !self.king[prev_board.active_color];
         if moved_king > 0 {
             let from_index = moved_king.leading_zeros();
-            let to_index = (after_move.king[self.active_color] & !self.king[self.active_color])
+            let to_index = (self.king[prev_board.active_color]
+                & !prev_board.king[prev_board.active_color])
                 .leading_zeros();
             return Some(BoardMove::new(from_index, to_index));
         }
 
-        let moved_rook = self.rooks[self.active_color] & !after_move.rooks[self.active_color];
+        let moved_rook =
+            prev_board.rooks[prev_board.active_color] & !self.rooks[prev_board.active_color];
         if moved_rook > 0 {
             let from_index = moved_rook.leading_zeros();
-            let to_index = (after_move.rooks[self.active_color] & !self.rooks[self.active_color])
+            let to_index = (self.rooks[prev_board.active_color]
+                & !prev_board.rooks[prev_board.active_color])
                 .leading_zeros();
             return Some(BoardMove::new(from_index, to_index));
         }
 
-        let moved_knight = self.knights[self.active_color] & !after_move.knights[self.active_color];
+        let moved_knight =
+            prev_board.knights[prev_board.active_color] & !self.knights[prev_board.active_color];
         if moved_knight > 0 {
             let from_index = moved_knight.leading_zeros();
-            let to_index = (after_move.knights[self.active_color]
-                & !self.knights[self.active_color])
+            let to_index = (self.knights[prev_board.active_color]
+                & !prev_board.knights[prev_board.active_color])
                 .leading_zeros();
             return Some(BoardMove::new(from_index, to_index));
         }
 
-        let moved_bishop = self.bishops[self.active_color] & !after_move.bishops[self.active_color];
+        let moved_bishop =
+            prev_board.bishops[prev_board.active_color] & !self.bishops[prev_board.active_color];
         if moved_bishop > 0 {
             let from_index = moved_bishop.leading_zeros();
-            let to_index = (after_move.bishops[self.active_color]
-                & !self.bishops[self.active_color])
+            let to_index = (self.bishops[prev_board.active_color]
+                & !prev_board.bishops[prev_board.active_color])
                 .leading_zeros();
             return Some(BoardMove::new(from_index, to_index));
         }
 
-        let moved_queen = self.queens[self.active_color] & !after_move.queens[self.active_color];
+        let moved_queen =
+            prev_board.queens[prev_board.active_color] & !self.queens[prev_board.active_color];
         if moved_queen > 0 {
             let from_index = moved_queen.leading_zeros();
-            let to_index = (after_move.queens[self.active_color] & !self.queens[self.active_color])
+            let to_index = (self.queens[prev_board.active_color]
+                & !prev_board.queens[prev_board.active_color])
                 .leading_zeros();
             return Some(BoardMove::new(from_index, to_index));
         }
@@ -2064,14 +2077,14 @@ mod tests {
         let board2 = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(25, 17);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("b6")));
 
         let board2 = board.apply_mutation(|b| {
             b.pawns[COLOR_WHITE].move_bit(25, 18);
             b.rooks[COLOR_BLACK].set_bit(18, false);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("bxc6")));
 
         let board =
@@ -2081,7 +2094,7 @@ mod tests {
             b.pawns[COLOR_BLACK].move_bit(37, 44);
             b.rooks[COLOR_WHITE].set_bit(44, false);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("fxe3")));
 
         let board =
@@ -2092,7 +2105,7 @@ mod tests {
             b.queens[COLOR_WHITE].set_bit(2, true);
             b.bishops[COLOR_BLACK].set_bit(2, false);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("dxc8=Q")));
 
         let board =
@@ -2103,7 +2116,7 @@ mod tests {
             b.pawns[COLOR_WHITE].move_bit(18, 11);
             b.pawns[COLOR_BLACK].set_bit(11, false);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("cxd7+")));
 
         let board =
@@ -2114,7 +2127,7 @@ mod tests {
             b.pawns[COLOR_WHITE].move_bit(18, 11);
             b.pawns[COLOR_BLACK].set_bit(11, false);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("cxd7#")));
     }
 
@@ -2129,20 +2142,20 @@ mod tests {
             b.rooks[COLOR_WHITE].move_bit(63, 61);
             b.king[COLOR_WHITE].move_bit(60, 62);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("O-O")));
 
         let board2 = board.apply_mutation(|b| {
             b.rooks[COLOR_WHITE].move_bit(56, 59);
             b.king[COLOR_WHITE].move_bit(60, 58);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("O-O-O")));
 
         let board2 = board.apply_mutation(|b| {
             b.king[COLOR_WHITE].move_bit(60, 61);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Kf1")));
 
         let mut board = board.clone();
@@ -2152,14 +2165,14 @@ mod tests {
             b.king[COLOR_BLACK].move_bit(4, 6);
             b.rooks[COLOR_BLACK].move_bit(7, 5);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("O-O")));
 
         let board2 = board.apply_mutation(|b| {
             b.king[COLOR_BLACK].move_bit(4, 2);
             b.rooks[COLOR_BLACK].move_bit(0, 3);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("O-O-O")));
 
         let board =
@@ -2168,7 +2181,7 @@ mod tests {
             b.king[COLOR_BLACK].move_bit(20, 28);
             b.pawns[COLOR_WHITE].set_bit(28, false);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Kxe5+")));
     }
 
@@ -2180,13 +2193,13 @@ mod tests {
         let board2 = board.apply_mutation(|b| {
             b.rooks[COLOR_BLACK].move_bit(26, 29);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Rf5+")));
 
         let board2 = board.apply_mutation(|b| {
             b.rooks[COLOR_BLACK].move_bit(26, 31);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Rch5")));
 
         let board =
@@ -2194,7 +2207,7 @@ mod tests {
         let board2 = board.apply_mutation(|b| {
             b.rooks[COLOR_BLACK].move_bit(15, 31);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Rh7h5")));
     }
 
@@ -2206,19 +2219,19 @@ mod tests {
         let board2 = board.apply_mutation(|b| {
             b.knights[COLOR_WHITE].move_bit(45, 35);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Nd4")));
 
         let board2 = board.apply_mutation(|b| {
             b.knights[COLOR_WHITE].move_bit(45, 51);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Nf3d2")));
 
         let board2 = board.apply_mutation(|b| {
             b.knights[COLOR_WHITE].move_bit(45, 62);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Nfg1")));
     }
 
@@ -2230,19 +2243,19 @@ mod tests {
         let board2 = board.apply_mutation(|b| {
             b.bishops[COLOR_BLACK].move_bit(48, 34);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Bc4")));
 
         let board2 = board.apply_mutation(|b| {
             b.bishops[COLOR_BLACK].move_bit(48, 57);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Bab1")));
 
         let board2 = board.apply_mutation(|b| {
             b.bishops[COLOR_BLACK].move_bit(48, 41);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Ba2b3")));
     }
 
@@ -2254,19 +2267,19 @@ mod tests {
         let board2 = board.apply_mutation(|b| {
             b.queens[COLOR_BLACK].move_bit(43, 35);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Qxd4")));
 
         let board2 = board.apply_mutation(|b| {
             b.queens[COLOR_BLACK].move_bit(43, 50);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Qd3c2")));
 
         let board2 = board.apply_mutation(|b| {
             b.queens[COLOR_BLACK].move_bit(41, 34);
         });
-        let notation = board.move_as_string(&board2);
+        let notation = board2.as_move_string(&board);
         assert_eq!(notation, Some(String::from("Qbc4")));
     }
 
@@ -2486,7 +2499,7 @@ mod tests {
 
         let board_moves: Vec<BoardMove> = moves
             .iter()
-            .filter_map(|b| board.as_board_move(b))
+            .filter_map(|b| b.as_board_move(&board))
             .collect();
         assert_eq!(board_moves.len(), moves.len());
 
@@ -2524,7 +2537,7 @@ mod tests {
         assert_eq!(en_passant_captures.len(), 2);
 
         for (from_board, to_board) in en_passant_captures {
-            let mv = from_board.as_board_move(&to_board).unwrap();
+            let mv = to_board.as_board_move(&from_board).unwrap();
             let b = from_board.apply_board_move(&mv).unwrap();
             assert_eq!(b, to_board);
         }
@@ -2542,7 +2555,7 @@ mod tests {
 
         for b in b2 {
             for b3 in b.next_boards() {
-                let mv = b.as_board_move(&b3).unwrap();
+                let mv = b3.as_board_move(&b).unwrap();
                 let board_after_move = b.apply_board_move(&mv).unwrap();
                 assert_eq!(board_after_move, b3);
                 counter += 1;

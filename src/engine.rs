@@ -380,7 +380,7 @@ mod tests {
         assert!(b.is_some());
 
         assert_eq!(
-            board.move_as_string(&b.unwrap()),
+            b.unwrap().as_move_string(&board),
             Some(String::from("Rxg6"))
         );
     }
@@ -398,7 +398,7 @@ mod tests {
         assert!(b.is_some());
         let b = b.unwrap();
 
-        assert_eq!(board.move_as_string(&b), Some(String::from("Qxa4")));
+        assert_eq!(b.as_move_string(&board), Some(String::from("Qxa4")));
 
         let board = b.apply_mutation(|b| {
             b.knights[COLOR_WHITE].move_bit(21, 31);
@@ -410,6 +410,6 @@ mod tests {
         assert!(b.is_some());
         let b = b.unwrap();
 
-        assert_eq!(board.move_as_string(&b), Some(String::from("Rd4")));
+        assert_eq!(b.as_move_string(&board), Some(String::from("Rd4")));
     }
 }
