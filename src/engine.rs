@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    board::{Board, BoardMove, COLOR_BLACK, COLOR_WHITE},
+    board::{Board, BoardMove, COLOR_WHITE},
     evaluator::{DefaultEvaluator, Evaluator, EvaluatorScore},
 };
 
@@ -92,9 +92,9 @@ impl Default for Engine {
 }
 
 impl Engine {
-    pub fn minmax_cutoff(&mut self, board: &Board, depth: u32) -> (Option<Board>, EvaluatorScore) {
+    pub fn search(&mut self, board: &Board, depth: u32) -> (Option<Board>, EvaluatorScore) {
         assert!(depth > 0, "depth should be at least 1");
-        let (mv, score) = self.minmax_cutoff_inner(
+        let (mv, score) = self.search_inner(
             board,
             depth,
             false,
@@ -113,7 +113,7 @@ impl Engine {
         }
     }
 
-    fn minmax_cutoff_inner(
+    fn search_inner(
         &mut self,
         board: &Board,
         depth: u32,
@@ -155,20 +155,14 @@ impl Engine {
         }
 
         if depth == 0 {
-            let score = self.evaluator.evaluate(board);
-            let score = if board.active_color == COLOR_BLACK {
-                -score
-            } else {
-                score
-            };
-            return (None, score);
+            return (None, self.evaluator.evaluate(board, board.active_color));
         }
 
         // Null move pruning
         let null_move_depth_reduction = 2;
         if allow_null && depth > null_move_depth_reduction + 1 && !board.is_check() {
             let null_move_board = board.apply_mutation(|_| {});
-            let (_, null_move_score) = self.minmax_cutoff_inner(
+            let (_, null_move_score) = self.search_inner(
                 &null_move_board,
                 depth - null_move_depth_reduction - 1,
                 false,
@@ -198,7 +192,7 @@ impl Engine {
         let mut best_score = EvaluatorScore::MinusInfinity;
 
         for b in next_boards {
-            let (_, score) = self.minmax_cutoff_inner(&b, depth - 1, true, -beta, -alpha);
+            let (_, score) = self.search_inner(&b, depth - 1, true, -beta, -alpha);
             let score = -score;
             if score > best_score || best_board.is_none() {
                 best_board = Some(b);
@@ -274,7 +268,7 @@ mod tests {
                 .unwrap();
 
         let mut engine = Engine::default();
-        let (b, score) = engine.minmax_cutoff(&board, 3);
+        let (b, score) = engine.search(&board, 3);
 
         // The engine notices this is checkmate.
         assert_eq!(score, EvaluatorScore::PlusInfinity);
@@ -295,7 +289,7 @@ mod tests {
         .unwrap();
 
         let mut engine = Engine::default();
-        let (b, score) = engine.minmax_cutoff(&board, 4);
+        let (b, score) = engine.search(&board, 4);
 
         // The engine notices this is checkmate.
         assert_eq!(score, EvaluatorScore::PlusInfinity);
@@ -313,7 +307,7 @@ mod tests {
         let board = Board::try_parse_fen("5r2/8/1R6/ppk3p1/2N3P1/P4b2/1K6/5B2 w - - 0 1").unwrap();
 
         let mut engine = Engine::default();
-        let (b, _score) = engine.minmax_cutoff(&board, 8);
+        let (b, _score) = engine.search(&board, 8);
 
         // It got the right move.
         assert_eq!(
@@ -329,7 +323,7 @@ mod tests {
                 .unwrap();
 
         let mut engine = Engine::default();
-        let (b, _score) = engine.minmax_cutoff(&board, 8);
+        let (b, _score) = engine.search(&board, 8);
 
         // It got the right move.
         assert_eq!(
@@ -347,7 +341,7 @@ mod tests {
                 .unwrap();
 
         let mut engine = Engine::default();
-        let (b, _score) = engine.minmax_cutoff(&board, 8);
+        let (b, _score) = engine.search(&board, 8);
 
         // It got the right move.
         assert_eq!(
@@ -366,7 +360,7 @@ mod tests {
 
         let mut engine = Engine::default();
 
-        let (b, _score) = engine.minmax_cutoff(&board, 9);
+        let (b, _score) = engine.search(&board, 9);
 
         assert!(b.is_some());
 
@@ -384,7 +378,7 @@ mod tests {
         let mut engine = Engine::default();
 
         // TODO: this fails if we increase the depth to 8!
-        let (b, _score) = engine.minmax_cutoff(&board, 6);
+        let (b, _score) = engine.search(&board, 6);
 
         assert!(b.is_some());
         let b = b.unwrap();
@@ -396,7 +390,7 @@ mod tests {
             b.queens[COLOR_BLACK] = 0;
         });
 
-        let (b, _score) = engine.minmax_cutoff(&board, 6);
+        let (b, _score) = engine.search(&board, 6);
 
         assert!(b.is_some());
         let b = b.unwrap();

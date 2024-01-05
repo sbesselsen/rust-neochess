@@ -18,7 +18,7 @@ fn main() {
                 }
                 Ok(b) => {
                     board = b;
-                    let (b, _) = engine.minmax_cutoff(&board, depth);
+                    let (b, _) = engine.search(&board, depth);
                     match b {
                         None => {
                             println!("No move found");
@@ -38,7 +38,7 @@ fn main() {
             }
         },
         "b" => {
-            let (b, _) = engine.minmax_cutoff(&board, depth);
+            let (b, _) = engine.search(&board, depth);
             let b = b.expect("first move should always yield a board");
             println!(
                 "My move: {}",
@@ -79,7 +79,7 @@ fn main() {
             .find(|(m, _)| m == &mv)
             .expect("read_option must have provided a valid option");
 
-        let (engine_move_board, _) = engine.minmax_cutoff(&player_move_board, depth);
+        let (engine_move_board, _) = engine.search(&player_move_board, depth);
         if let Some(b) = engine_move_board {
             board = b;
             println!(
