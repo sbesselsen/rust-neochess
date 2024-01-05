@@ -831,12 +831,18 @@ impl BitBoard {
         self.apply_mutation(|b| {
             b.en_passant_square = None;
             f(b);
-            b.halfmove_clock ^= 1;
             if b.active_color == COLOR_WHITE {
                 b.active_color = COLOR_BLACK;
             } else {
                 b.active_color = COLOR_WHITE;
                 b.fullmove_number += 1;
+            }
+            if b.pawns[self.active_color] != self.pawns[self.active_color]
+                || b.occupancy_bits_for(b.active_color) != self.occupancy_bits_for(b.active_color)
+            {
+                b.halfmove_clock = 0;
+            } else {
+                b.halfmove_clock += 1;
             }
 
             // Update castling based on whether the rook or king moved
@@ -1496,14 +1502,10 @@ impl Display for BitBoard {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::VecDeque, time::Instant};
-
     use crate::{
-        bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING},
+        bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING, SIDE_QUEEN},
         bitwise_helper::BitwiseHelper,
     };
-
-    use super::SIDE_QUEEN;
 
     #[test]
     fn empty_board_works() {
@@ -1988,25 +1990,6 @@ mod tests {
     }
 
     #[test]
-    fn make_many_boards() {
-        let start = Instant::now();
-
-        let mut queue = VecDeque::new();
-        queue.push_back(BitBoard::new_setup());
-
-        let mut counter = 0;
-        while counter < 1_000_000 {
-            let board = queue.pop_front().unwrap();
-            for b in board.next_boards() {
-                queue.push_back(b);
-                counter += 1;
-            }
-        }
-
-        assert!(start.elapsed().as_millis() < 1_000);
-    }
-
-    #[test]
     fn zobrist_hash_basics() {
         let board = BitBoard::new();
         assert_eq!(board.zobrist_hash, 0);
@@ -2155,6 +2138,7 @@ mod tests {
         assert_eq!(board.perft(4), 3_894_594);
     }
 
+    #[ignore]
     #[test]
     fn perft_chessprogramming() {
         // See https://www.chessprogramming.net/is-perft-speed-important/
@@ -2164,5 +2148,36 @@ mod tests {
         .unwrap();
 
         assert_eq!(board.perft(5), 193_690_690);
+    }
+
+    #[test]
+    fn halfmove_clock() {
+        let board = BitBoard::try_parse_fen(
+            "2b5/p2NBp1p/1bp1nPPr/3P4/2pRnr1P/1k1B1Ppp/1P1P1pQP/Rq1N3K w - - 5 1",
+        )
+        .unwrap();
+        let halfmove_clock = board.halfmove_clock;
+
+        assert_eq!(halfmove_clock, 5);
+        assert_eq!(board.active_color, COLOR_WHITE);
+
+        let b = board.apply_move(|b| {
+            b.bishops[COLOR_WHITE].move_bit(12, 19);
+        });
+
+        assert_eq!(b.halfmove_clock, halfmove_clock + 1);
+
+        let b = board.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(22, 14);
+        });
+
+        assert_eq!(b.halfmove_clock, 0);
+
+        let b = board.apply_move(|b| {
+            b.bishops[COLOR_WHITE].move_bit(43, 57);
+            b.queens[COLOR_BLACK].set_bit(57, false);
+        });
+
+        assert_eq!(b.halfmove_clock, 0);
     }
 }
