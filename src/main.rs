@@ -1,17 +1,17 @@
-use neochess::{bitboard::BitBoard, engine::Engine};
+use neochess::{board::Board, engine::Engine};
 use std::io::{stdin, BufRead};
 
 fn main() {
     let depth = 8;
 
     let mut engine = Engine::default();
-    let mut board = BitBoard::new_setup();
+    let mut board = Board::new_setup();
 
     let input = read_option("Play as (w/b/fen): ", vec!["w", "b", "fen"]);
     match &input[..] {
         "fen" => loop {
             let input = read_line("FEN: ");
-            let parsed_board = BitBoard::try_parse_fen(&input[..]);
+            let parsed_board = Board::try_parse_fen(&input[..]);
             match parsed_board {
                 Err(_) => {
                     println!("Invalid FEN!");
@@ -50,7 +50,7 @@ fn main() {
     }
 
     loop {
-        let moves_boards: Vec<(String, BitBoard)> = board
+        let moves_boards: Vec<(String, Board)> = board
             .next_boards()
             .into_iter()
             .map(|b| {

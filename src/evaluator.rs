@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, fmt::Display, ops::Neg};
 
-use crate::bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK};
+use crate::board::{Board, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum EvaluatorScore {
@@ -87,8 +87,8 @@ impl Display for EvaluatorScore {
 }
 
 pub trait Evaluator {
-    fn evaluate(&self, board: &BitBoard) -> EvaluatorScore;
-    fn order_moves(&self, prev_board: &BitBoard, boards: &mut Vec<BitBoard>);
+    fn evaluate(&self, board: &Board) -> EvaluatorScore;
+    fn order_moves(&self, prev_board: &Board, boards: &mut Vec<Board>);
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -107,7 +107,7 @@ impl Default for DefaultEvaluator {
 }
 
 impl Evaluator for DefaultEvaluator {
-    fn evaluate(&self, board: &BitBoard) -> EvaluatorScore {
+    fn evaluate(&self, board: &Board) -> EvaluatorScore {
         let white_is_dead = board.king[COLOR_WHITE] == 0;
         let black_is_dead = board.king[COLOR_BLACK] == 0;
         if white_is_dead && !black_is_dead {
@@ -134,7 +134,7 @@ impl Evaluator for DefaultEvaluator {
         )
     }
 
-    fn order_moves(&self, prev_board: &BitBoard, boards: &mut Vec<BitBoard>) {
+    fn order_moves(&self, prev_board: &Board, boards: &mut Vec<Board>) {
         boards.sort_by_cached_key(|b| {
             if b.is_check() {
                 // Checks go first!
@@ -186,7 +186,7 @@ impl Evaluator for DefaultEvaluator {
 #[cfg(test)]
 mod tests {
     use crate::{
-        bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE},
+        board::{Board, COLOR_BLACK, COLOR_WHITE},
         evaluator::{Evaluator, EvaluatorScore},
     };
 
@@ -195,25 +195,22 @@ mod tests {
     #[test]
     fn trivial_zeros() {
         let eval = DefaultEvaluator::new();
-        assert_eq!(
-            eval.evaluate(&BitBoard::new_setup()),
-            EvaluatorScore::Value(0)
-        );
-        assert_eq!(eval.evaluate(&BitBoard::new()), EvaluatorScore::Value(0));
+        assert_eq!(eval.evaluate(&Board::new_setup()), EvaluatorScore::Value(0));
+        assert_eq!(eval.evaluate(&Board::new()), EvaluatorScore::Value(0));
     }
 
     #[test]
     fn dead_kings() {
         let eval = DefaultEvaluator::new();
-        let board = BitBoard::new_setup().apply_move(|b| {
+        let board = Board::new_setup().apply_move(|b| {
             b.king[COLOR_WHITE] = 0;
         });
         assert_eq!(eval.evaluate(&board), EvaluatorScore::MinusInfinity);
-        let board = BitBoard::new_setup().apply_move(|b| {
+        let board = Board::new_setup().apply_move(|b| {
             b.king[COLOR_BLACK] = 0;
         });
         assert_eq!(eval.evaluate(&board), EvaluatorScore::PlusInfinity);
-        let board = BitBoard::new_setup().apply_move(|b| {
+        let board = Board::new_setup().apply_move(|b| {
             b.king[COLOR_WHITE] = 0;
             b.king[COLOR_BLACK] = 0;
         });
@@ -224,7 +221,7 @@ mod tests {
     fn eval_some_board() {
         let eval = DefaultEvaluator::new();
         let board =
-            BitBoard::try_parse_fen("8/6p1/1N1kbp2/1p2pR2/6P1/3PBBNr/1P6/3K4 w - - 0 1").unwrap();
+            Board::try_parse_fen("8/6p1/1N1kbp2/1p2pR2/6P1/3PBBNr/1P6/3K4 w - - 0 1").unwrap();
         assert_eq!(eval.evaluate(&board), EvaluatorScore::Value(800));
     }
 }

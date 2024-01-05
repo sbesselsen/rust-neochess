@@ -1,4 +1,4 @@
-pub mod bitboard;
 mod bitwise_helper;
+pub mod board;
 pub mod engine;
 pub mod evaluator;

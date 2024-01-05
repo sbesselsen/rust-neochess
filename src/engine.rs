@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE},
+    board::{Board, COLOR_BLACK, COLOR_WHITE},
     evaluator::{DefaultEvaluator, Evaluator, EvaluatorScore},
 };
 
@@ -91,11 +91,7 @@ impl Default for Engine {
 }
 
 impl Engine {
-    pub fn minmax_cutoff(
-        &mut self,
-        board: &BitBoard,
-        depth: u32,
-    ) -> (Option<BitBoard>, EvaluatorScore) {
+    pub fn minmax_cutoff(&mut self, board: &Board, depth: u32) -> (Option<Board>, EvaluatorScore) {
         assert!(depth > 0, "depth should be at least 1");
         let (b, score) = self.minmax_cutoff_inner(
             board,
@@ -114,13 +110,13 @@ impl Engine {
 
     fn minmax_cutoff_inner(
         &mut self,
-        board: &BitBoard,
+        board: &Board,
         depth: u32,
         return_board: bool,
         allow_null: bool,
         alpha: EvaluatorScore,
         beta: EvaluatorScore,
-    ) -> (Option<BitBoard>, EvaluatorScore) {
+    ) -> (Option<Board>, EvaluatorScore) {
         let alpha_orig = alpha;
         let mut alpha = alpha;
         let mut beta = beta;
@@ -194,7 +190,7 @@ impl Engine {
             return (None, score);
         }
 
-        let mut best_board: Option<BitBoard> = None;
+        let mut best_board: Option<Board> = None;
         let mut best_score = EvaluatorScore::MinusInfinity;
 
         for b in next_boards {
@@ -229,7 +225,7 @@ impl Engine {
 
     fn add_transposition_entry(
         &mut self,
-        board: &BitBoard,
+        board: &Board,
         depth: u32,
         score: EvaluatorScore,
         bound: TranspositionTableBound,
@@ -253,13 +249,13 @@ impl Engine {
         });
     }
 
-    fn get_transposition_entry(&self, board: &BitBoard) -> Option<TranspositionTableEntry> {
+    fn get_transposition_entry(&self, board: &Board) -> Option<TranspositionTableEntry> {
         let index = (board.zobrist_hash % (self.transposition_table.len() as u64)) as usize;
 
         self.transposition_table[index].filter(|e| e.zobrist_hash == board.zobrist_hash)
     }
 
-    fn order_boards(&self, prev_board: &BitBoard, boards: &mut Vec<BitBoard>) {
+    fn order_boards(&self, prev_board: &Board, boards: &mut Vec<Board>) {
         self.evaluator.order_moves(prev_board, boards);
     }
 }
@@ -267,8 +263,8 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use crate::{
-        bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE},
         bitwise_helper::BitwiseHelper,
+        board::{Board, COLOR_BLACK, COLOR_WHITE},
         evaluator::EvaluatorScore,
     };
 
@@ -282,10 +278,9 @@ mod tests {
 
     #[test]
     fn mate_in_1() {
-        let board = BitBoard::try_parse_fen(
-            "r3kbnr/p1pp1ppp/bp2P3/8/1n5N/4P3/PPP2PPP/RNBQKB1R w KQkq - 1 7",
-        )
-        .unwrap();
+        let board =
+            Board::try_parse_fen("r3kbnr/p1pp1ppp/bp2P3/8/1n5N/4P3/PPP2PPP/RNBQKB1R w KQkq - 1 7")
+                .unwrap();
 
         let mut engine = Engine::default();
         let (b, score) = engine.minmax_cutoff(&board, 3);
@@ -303,7 +298,7 @@ mod tests {
     #[test]
     fn mate_in_2() {
         // Taken from https://wtharvey.com/m8n2.txt
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 1",
         )
         .unwrap();
@@ -324,8 +319,7 @@ mod tests {
 
     #[test]
     fn perf_test_1() {
-        let board =
-            BitBoard::try_parse_fen("5r2/8/1R6/ppk3p1/2N3P1/P4b2/1K6/5B2 w - - 0 1").unwrap();
+        let board = Board::try_parse_fen("5r2/8/1R6/ppk3p1/2N3P1/P4b2/1K6/5B2 w - - 0 1").unwrap();
 
         let mut engine = Engine::default();
         let (b, _score) = engine.minmax_cutoff(&board, 8);
@@ -340,7 +334,7 @@ mod tests {
     #[test]
     fn perf_test_2() {
         let board =
-            BitBoard::try_parse_fen("5rk1/p1nnqr1p/1p1p4/3Pp2Q/5p1N/1P4PB/P2R1P1P/4R1K1 w - - 0 1")
+            Board::try_parse_fen("5rk1/p1nnqr1p/1p1p4/3Pp2Q/5p1N/1P4PB/P2R1P1P/4R1K1 w - - 0 1")
                 .unwrap();
 
         let mut engine = Engine::default();
@@ -358,7 +352,7 @@ mod tests {
     #[test]
     fn perf_test_3() {
         let board =
-            BitBoard::try_parse_fen("2r3k1/6r1/p3p3/3bQp1p/2pP2q1/P1P5/2B1R1PP/5RK1 b - - 0 1")
+            Board::try_parse_fen("2r3k1/6r1/p3p3/3bQp1p/2pP2q1/P1P5/2B1R1PP/5RK1 b - - 0 1")
                 .unwrap();
 
         let mut engine = Engine::default();
@@ -376,7 +370,7 @@ mod tests {
     #[test]
     fn test_puzzle_1() {
         let board =
-            BitBoard::try_parse_fen("8/1kq3r1/p1p1b1N1/2p1Q2p/P2p4/3P2P1/1PP4P/4R1K1 b - - 0 1")
+            Board::try_parse_fen("8/1kq3r1/p1p1b1N1/2p1Q2p/P2p4/3P2P1/1PP4P/4R1K1 b - - 0 1")
                 .unwrap();
 
         let mut engine = Engine::default();
@@ -393,9 +387,8 @@ mod tests {
 
     #[test]
     fn test_puzzle_2() {
-        let board =
-            BitBoard::try_parse_fen("3rkbnr/pp2pppp/8/q7/Q4B2/2N2P2/PPP2P1P/R3K2R b KQ - 0 1")
-                .unwrap();
+        let board = Board::try_parse_fen("3rkbnr/pp2pppp/8/q7/Q4B2/2N2P2/PPP2P1P/R3K2R b KQ - 0 1")
+            .unwrap();
 
         let mut engine = Engine::default();
 

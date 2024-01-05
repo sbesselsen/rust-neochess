@@ -23,7 +23,7 @@ mod zobrist_constants {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct BitBoard {
+pub struct Board {
     // Board definition
     pub pawns: [u64; 2],
     pub rooks: [u64; 2],
@@ -65,7 +65,7 @@ impl Display for FenParseError {
     }
 }
 
-impl Hash for BitBoard {
+impl Hash for Board {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.zobrist_hash.hash(state);
     }
@@ -90,9 +90,9 @@ impl ColorHelper for usize {
     }
 }
 
-impl BitBoard {
-    pub fn new() -> BitBoard {
-        BitBoard {
+impl Board {
+    pub fn new() -> Board {
+        Board {
             pawns: [0, 0],
             rooks: [0, 0],
             knights: [0, 0],
@@ -108,8 +108,8 @@ impl BitBoard {
         }
     }
 
-    pub fn new_setup() -> BitBoard {
-        let mut board = BitBoard {
+    pub fn new_setup() -> Board {
+        let mut board = Board {
             pawns: [0x000000000000FF00, 0x00FF000000000000],
             rooks: [0x0000000000000081, 0x8100000000000000],
             knights: [0x0000000000000042, 0x4200000000000000],
@@ -117,7 +117,7 @@ impl BitBoard {
             queens: [0x0000000000000010, 0x1000000000000000],
             king: [0x0000000000000008, 0x0800000000000000],
             can_castle: [[true, true], [true, true]],
-            ..BitBoard::new()
+            ..Board::new()
         };
         board.compute_hash();
         board
@@ -165,7 +165,7 @@ impl BitBoard {
         }
     }
 
-    fn update_hash(&mut self, prev_board: &BitBoard) {
+    fn update_hash(&mut self, prev_board: &Board) {
         if prev_board.active_color != self.active_color {
             self.zobrist_hash ^= ZOBRIST_BLACK_TO_MOVE;
         }
@@ -235,13 +235,13 @@ impl BitBoard {
         }
     }
 
-    pub fn try_parse_fen(fen: &str) -> Result<BitBoard, FenParseError> {
+    pub fn try_parse_fen(fen: &str) -> Result<Board, FenParseError> {
         let parts: Vec<&str> = fen.trim().split(' ').collect();
         if parts.len() != 6 {
             return Err(FenParseError::from("Some elements are missing"));
         }
 
-        let mut board = BitBoard::new();
+        let mut board = Board::new();
 
         // Parse the pieces.
         let ranks: Vec<&str> = parts[0].split('/').collect();
@@ -349,7 +349,7 @@ impl BitBoard {
         Ok(board)
     }
 
-    pub fn next_boards(&self) -> Vec<BitBoard> {
+    pub fn next_boards(&self) -> Vec<Board> {
         let mut output = Vec::with_capacity(40);
 
         self.push_pawn_moves(&mut output);
@@ -364,7 +364,7 @@ impl BitBoard {
         output
     }
 
-    fn remove_checks(boards: &mut Vec<BitBoard>) {
+    fn remove_checks(boards: &mut Vec<Board>) {
         boards.retain_mut(|b| {
             b.active_color = b.active_color.opponent();
             let is_check = b.is_check();
@@ -385,7 +385,7 @@ impl BitBoard {
         if !self.is_check() {
             return false;
         }
-        let mut next_boards: Vec<BitBoard> = self.next_boards();
+        let mut next_boards: Vec<Board> = self.next_boards();
         for b in next_boards.iter_mut() {
             b.active_color = self.active_color;
             if !b.is_check() {
@@ -482,7 +482,7 @@ impl BitBoard {
         output
     }
 
-    pub fn move_as_string(&self, after_move: &BitBoard) -> Option<String> {
+    pub fn move_as_string(&self, after_move: &Board) -> Option<String> {
         let opponent_color = self.active_color.opponent();
         let opponent_occupancy = self.occupancy_bits_for(opponent_color);
 
@@ -815,18 +815,18 @@ impl BitBoard {
         None
     }
 
-    pub fn apply_mutation<F>(&self, f: F) -> BitBoard
+    pub fn apply_mutation<F>(&self, f: F) -> Board
     where
-        F: FnOnce(&mut BitBoard),
+        F: FnOnce(&mut Board),
     {
         let mut clone = self.clone();
         f(&mut clone);
         clone
     }
 
-    pub fn apply_move<F>(&self, f: F) -> BitBoard
+    pub fn apply_move<F>(&self, f: F) -> Board
     where
-        F: FnOnce(&mut BitBoard),
+        F: FnOnce(&mut Board),
     {
         self.apply_mutation(|b| {
             b.en_passant_square = None;
@@ -927,7 +927,7 @@ impl BitBoard {
         })
     }
 
-    fn push_knight_moves(&self, output: &mut Vec<BitBoard>) {
+    fn push_knight_moves(&self, output: &mut Vec<Board>) {
         if self.knights[self.active_color] == 0 {
             return;
         }
@@ -996,7 +996,7 @@ impl BitBoard {
         })
     }
 
-    fn push_rooklike_moves(&self, output: &mut Vec<BitBoard>) {
+    fn push_rooklike_moves(&self, output: &mut Vec<Board>) {
         let rooklike_mask = self.rooks[self.active_color] | self.queens[self.active_color];
 
         if rooklike_mask == 0 {
@@ -1071,7 +1071,7 @@ impl BitBoard {
         })
     }
 
-    fn push_bishoplike_moves(&self, output: &mut Vec<BitBoard>) {
+    fn push_bishoplike_moves(&self, output: &mut Vec<Board>) {
         let bishoplike_mask = self.bishops[self.active_color] | self.queens[self.active_color];
 
         if bishoplike_mask == 0 {
@@ -1094,7 +1094,7 @@ impl BitBoard {
         }
     }
 
-    fn push_pawn_moves(&self, output: &mut Vec<BitBoard>) {
+    fn push_pawn_moves(&self, output: &mut Vec<Board>) {
         if self.pawns[self.active_color] == 0 {
             return;
         }
@@ -1155,7 +1155,7 @@ impl BitBoard {
         }
     }
 
-    fn push_pawn_captures(&self, from_index: u32, to_index: u32, output: &mut Vec<BitBoard>) {
+    fn push_pawn_captures(&self, from_index: u32, to_index: u32, output: &mut Vec<Board>) {
         let opponent_color = self.active_color.opponent();
 
         if self.en_passant_square == Some(to_index) {
@@ -1196,7 +1196,7 @@ impl BitBoard {
         }
     }
 
-    fn push_pawn_promotions(&self, from_index: u32, to_index: u32, output: &mut Vec<BitBoard>) {
+    fn push_pawn_promotions(&self, from_index: u32, to_index: u32, output: &mut Vec<Board>) {
         output.push(self.apply_move(|b| {
             b.pawns[self.active_color].set_bit(from_index, false);
             b.rooks[self.active_color].set_bit(to_index, true);
@@ -1234,7 +1234,7 @@ impl BitBoard {
         (left_mask | right_mask | up_mask | down_mask) & !self_occupancy
     }
 
-    fn push_king_moves(&self, output: &mut Vec<BitBoard>) {
+    fn push_king_moves(&self, output: &mut Vec<Board>) {
         if self.king[self.active_color] == 0 {
             return;
         }
@@ -1419,15 +1419,15 @@ impl BitBoard {
     }
 }
 
-impl Default for BitBoard {
+impl Default for Board {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Debug for BitBoard {
+impl Debug for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BitBoard")
+        f.debug_struct("Board")
             .field(
                 "pawns",
                 &[
@@ -1494,7 +1494,7 @@ impl Debug for BitBoard {
     }
 }
 
-impl Display for BitBoard {
+impl Display for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.to_readable_board())
     }
@@ -1503,13 +1503,13 @@ impl Display for BitBoard {
 #[cfg(test)]
 mod tests {
     use crate::{
-        bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING, SIDE_QUEEN},
         bitwise_helper::BitwiseHelper,
+        board::{Board, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING, SIDE_QUEEN},
     };
 
     #[test]
     fn empty_board_works() {
-        let board = BitBoard::new();
+        let board = Board::new();
         assert_eq!(board.active_color, COLOR_WHITE);
         assert_eq!(board.next_boards().len(), 0);
         assert_eq!(board.occupancy_bits(), 0);
@@ -1517,14 +1517,14 @@ mod tests {
 
     #[test]
     fn setup_board_works() {
-        let normal_board = BitBoard::new_setup();
+        let normal_board = Board::new_setup();
         assert_eq!(normal_board.active_color, COLOR_WHITE);
         assert_eq!(normal_board.next_boards().len(), 20);
     }
 
     #[test]
     fn queen_moves_correctly() {
-        let mut board = BitBoard::new();
+        let mut board = Board::new();
         board.queens[COLOR_WHITE] = 0x0000000008000000;
         board.rooks[COLOR_BLACK] = 0x0008000000000000;
         assert_eq!(board.next_boards().len(), 26);
@@ -1532,10 +1532,10 @@ mod tests {
 
     #[test]
     fn king_moves_correctly() {
-        let mut board = BitBoard::new_setup();
+        let mut board = Board::new_setup();
         board.king[COLOR_WHITE] |= 0x0000804200000000;
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 19);
@@ -1543,10 +1543,10 @@ mod tests {
 
     #[test]
     fn knight_moves_correctly() {
-        let mut board = BitBoard::new_setup();
+        let mut board = Board::new_setup();
         board.knights[COLOR_WHITE] = 0x0000008000020000;
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_knight_moves(&mut moves);
 
         assert_eq!(moves.len(), 7);
@@ -1554,10 +1554,10 @@ mod tests {
 
     #[test]
     fn rook_moves_correctly() {
-        let mut board = BitBoard::new_setup();
+        let mut board = Board::new_setup();
         board.rooks[COLOR_WHITE] = 0x0000008200000000;
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_rooklike_moves(&mut moves);
 
         assert_eq!(moves.len(), 19);
@@ -1565,10 +1565,10 @@ mod tests {
 
     #[test]
     fn pawn_moves_correctly() {
-        let mut board = BitBoard::new_setup();
+        let mut board = Board::new_setup();
         board.knights[COLOR_BLACK] = 0x0000000000040000;
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_pawn_moves(&mut moves);
 
         assert_eq!(moves.len(), 16);
@@ -1576,10 +1576,10 @@ mod tests {
 
     #[test]
     fn bishop_moves_correctly() {
-        let mut board = BitBoard::new_setup();
+        let mut board = Board::new_setup();
         board.bishops[COLOR_WHITE] = 0x0000008200000000;
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_bishoplike_moves(&mut moves);
 
         assert_eq!(moves.len(), 10);
@@ -1587,17 +1587,17 @@ mod tests {
 
     #[test]
     fn googled_en_passant() {
-        let mut board = BitBoard::new_setup();
+        let mut board = Board::new_setup();
         board.pawns[COLOR_BLACK] |= 0x0000000040000000;
 
         let next_boards = board.next_boards();
 
-        let en_passants: Vec<&BitBoard> = next_boards
+        let en_passants: Vec<&Board> = next_boards
             .iter()
             .filter(|b| b.en_passant_square.is_some())
             .collect();
 
-        let en_passant_captures: Vec<BitBoard> = en_passants
+        let en_passant_captures: Vec<Board> = en_passants
             .iter()
             .flat_map(|b| b.next_boards())
             .filter(|b| (b.pawns[COLOR_WHITE] & (RANK_0_MASK << 24)) == 0)
@@ -1609,7 +1609,7 @@ mod tests {
     #[test]
     fn board_parser_works() {
         let fen = "r1bqkb1r/pppppppp/2n5/8/8/2N4N/PPPPPPP1/R1BQ1K1R w kq - 10 6";
-        let board = BitBoard::try_parse_fen(fen);
+        let board = Board::try_parse_fen(fen);
         assert!(board.is_ok());
         assert_eq!(board.unwrap().to_fen(), fen);
     }
@@ -1622,34 +1622,34 @@ mod tests {
         bishoplike_moves: usize,
         king_moves: usize,
     ) {
-        let board = BitBoard::try_parse_fen(fen);
+        let board = Board::try_parse_fen(fen);
         assert!(board.is_ok());
 
         let board = board.unwrap();
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_pawn_moves(&mut moves);
-        BitBoard::remove_checks(&mut moves);
+        Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), pawn_moves);
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_king_moves(&mut moves);
-        BitBoard::remove_checks(&mut moves);
+        Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), king_moves);
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_rooklike_moves(&mut moves);
-        BitBoard::remove_checks(&mut moves);
+        Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), rooklike_moves);
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_bishoplike_moves(&mut moves);
-        BitBoard::remove_checks(&mut moves);
+        Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), bishoplike_moves);
 
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_knight_moves(&mut moves);
-        BitBoard::remove_checks(&mut moves);
+        Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), knight_moves);
 
         assert_eq!(
@@ -1696,41 +1696,41 @@ mod tests {
 
     #[test]
     fn castling_for_white_works() {
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
         )
         .unwrap();
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 3);
 
         // King can't castle because of a bishop.
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r2qkb1r/ppp2ppp/2np1n2/1B2p1N1/2b1P3/2N3P1/PPPP1P1P/R1BQK2R w KQkq - 1 7",
         )
         .unwrap();
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 2);
 
         // King can castle on both sides.
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r1b1kb1r/1ppq1ppp/p1np4/1B2p1B1/4P1n1/2NP1N2/PPPQ1PPP/R3K2R w KQkq - 0 8",
         )
         .unwrap();
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 5);
 
         // King can castle kingside but not queenside.
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r1b1kb1r/1ppq1ppp/p1Bp4/4p1B1/4P3/2NP1N2/PPPQ1nPP/R3K2R w KQkq - 0 9",
         )
         .unwrap();
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 5);
@@ -1738,31 +1738,31 @@ mod tests {
 
     #[test]
     fn castling_for_black_works() {
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "rnbqk2r/pppp1ppp/5n2/1B2p3/1b2P3/P4N2/1PPP1PPP/RNBQK2R b KQkq - 0 4",
         )
         .unwrap();
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 3);
 
         // King can't castle because it has already moved.
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "rnbqk2r/pppp1ppp/5n2/1B2p3/1b2P3/P4N2/1PPP1PPP/RNBQK2R b KQq - 0 4",
         )
         .unwrap();
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 2);
 
         // King can't castle queenside because of a pawn.
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r3k2r/p1Pq1ppp/1pn5/4p3/1Pb1P1n1/5N2/1PP2PPP/RNBQK2R b KQkq - 0 10",
         )
         .unwrap();
-        let mut moves: Vec<BitBoard> = vec![];
+        let mut moves: Vec<Board> = vec![];
         board.push_king_moves(&mut moves);
 
         // Again, this seems wrong, but we can put the king in check.
@@ -1772,8 +1772,7 @@ mod tests {
     #[test]
     fn pawn_move_notation() {
         let board =
-            BitBoard::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1")
-                .unwrap();
+            Board::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1").unwrap();
 
         let board2 = board.apply_move(|b| {
             b.pawns[COLOR_WHITE].move_bit(25, 17);
@@ -1789,8 +1788,7 @@ mod tests {
         assert_eq!(notation, Some(String::from("bxc6")));
 
         let board =
-            BitBoard::try_parse_fen("2b1K3/B2P2k1/2r2pnn/1P2P2B/5pPq/4R3/3p1R2/8 b - - 0 1")
-                .unwrap();
+            Board::try_parse_fen("2b1K3/B2P2k1/2r2pnn/1P2P2B/5pPq/4R3/3p1R2/8 b - - 0 1").unwrap();
 
         let board2 = board.apply_move(|b| {
             b.pawns[COLOR_BLACK].move_bit(37, 44);
@@ -1800,8 +1798,7 @@ mod tests {
         assert_eq!(notation, Some(String::from("fxe3")));
 
         let board =
-            BitBoard::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1")
-                .unwrap();
+            Board::try_parse_fen("2b1K3/B2P1pk1/2r3nn/1P2P2B/5pPq/4R3/3p1R2/8 w - - 0 1").unwrap();
 
         let board2 = board.apply_move(|b| {
             b.pawns[COLOR_WHITE].set_bit(11, false);
@@ -1812,7 +1809,7 @@ mod tests {
         assert_eq!(notation, Some(String::from("dxc8=Q")));
 
         let board =
-            BitBoard::try_parse_fen("rnbqkbnr/pppppppp/2P5/8/8/8/PP1PPPPP/RNBQKBNR w KQkq - 0 1")
+            Board::try_parse_fen("rnbqkbnr/pppppppp/2P5/8/8/8/PP1PPPPP/RNBQKBNR w KQkq - 0 1")
                 .unwrap();
 
         let board2 = board.apply_move(|b| {
@@ -1823,7 +1820,7 @@ mod tests {
         assert_eq!(notation, Some(String::from("cxd7+")));
 
         let board =
-            BitBoard::try_parse_fen("r2bkbnr/pppppppp/2P5/8/8/4P3/PP2PPPP/RNBQKBNR w KQkq - 0 1")
+            Board::try_parse_fen("r2bkbnr/pppppppp/2P5/8/8/4P3/PP2PPPP/RNBQKBNR w KQkq - 0 1")
                 .unwrap();
 
         let board2 = board.apply_move(|b| {
@@ -1836,7 +1833,7 @@ mod tests {
 
     #[test]
     fn king_move_notation() {
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r3k2r/1pp1bppp/p1np1n2/4p1q1/2BP2b1/1PN1PN1P/PBP1QPP1/R3K2R w KQkq - 0 1",
         )
         .unwrap();
@@ -1879,8 +1876,7 @@ mod tests {
         assert_eq!(notation, Some(String::from("O-O-O")));
 
         let board =
-            BitBoard::try_parse_fen("6K1/q7/P3k2P/N1r1P2P/b2R1p2/3p3N/b1b1B1p1/8 b - - 0 1")
-                .unwrap();
+            Board::try_parse_fen("6K1/q7/P3k2P/N1r1P2P/b2R1p2/3p3N/b1b1B1p1/8 b - - 0 1").unwrap();
         let board2 = board.apply_move(|b| {
             b.king[COLOR_BLACK].move_bit(20, 28);
             b.pawns[COLOR_WHITE].set_bit(28, false);
@@ -1892,7 +1888,7 @@ mod tests {
     #[test]
     fn rook_move_notation() {
         let board =
-            BitBoard::try_parse_fen("1R3K1B/2Pp4/2p5/2r5/2P3k1/1n1P2P1/p6r/q6N b - - 0 1").unwrap();
+            Board::try_parse_fen("1R3K1B/2Pp4/2p5/2r5/2P3k1/1n1P2P1/p6r/q6N b - - 0 1").unwrap();
 
         let board2 = board.apply_move(|b| {
             b.rooks[COLOR_BLACK].move_bit(26, 29);
@@ -1907,7 +1903,7 @@ mod tests {
         assert_eq!(notation, Some(String::from("Rch5")));
 
         let board =
-            BitBoard::try_parse_fen("1R3K1B/2Pp3r/2p5/8/2P3k1/1n1P2P1/p6r/q6N b - - 0 1").unwrap();
+            Board::try_parse_fen("1R3K1B/2Pp3r/2p5/8/2P3k1/1n1P2P1/p6r/q6N b - - 0 1").unwrap();
         let board2 = board.apply_move(|b| {
             b.rooks[COLOR_BLACK].move_bit(15, 31);
         });
@@ -1918,8 +1914,7 @@ mod tests {
     #[test]
     fn knight_move_notation() {
         let board =
-            BitBoard::try_parse_fen("R3R3/1k5p/5PP1/3qP3/n5K1/1P2PN1N/p1r3B1/5N2 w - - 0 1")
-                .unwrap();
+            Board::try_parse_fen("R3R3/1k5p/5PP1/3qP3/n5K1/1P2PN1N/p1r3B1/5N2 w - - 0 1").unwrap();
 
         let board2 = board.apply_move(|b| {
             b.knights[COLOR_WHITE].move_bit(45, 35);
@@ -1943,8 +1938,7 @@ mod tests {
     #[test]
     fn bishop_move_notation() {
         let board =
-            BitBoard::try_parse_fen("6K1/q7/P3k2P/N1r1P2P/b2R1p2/3p3N/b1b1B1p1/8 b - - 0 1")
-                .unwrap();
+            Board::try_parse_fen("6K1/q7/P3k2P/N1r1P2P/b2R1p2/3p3N/b1b1B1p1/8 b - - 0 1").unwrap();
 
         let board2 = board.apply_move(|b| {
             b.bishops[COLOR_BLACK].move_bit(48, 34);
@@ -1968,7 +1962,7 @@ mod tests {
     #[test]
     fn queen_move_notation() {
         let board =
-            BitBoard::try_parse_fen("3Nbk2/1pP5/4B2K/PN2B3/3Q3p/1q1qrP2/p7/3q4 b - - 0 1").unwrap();
+            Board::try_parse_fen("3Nbk2/1pP5/4B2K/PN2B3/3Q3p/1q1qrP2/p7/3q4 b - - 0 1").unwrap();
 
         let board2 = board.apply_move(|b| {
             b.queens[COLOR_BLACK].move_bit(43, 35);
@@ -1991,20 +1985,20 @@ mod tests {
 
     #[test]
     fn zobrist_hash_basics() {
-        let board = BitBoard::new();
+        let board = Board::new();
         assert_eq!(board.zobrist_hash, 0);
 
-        let board = BitBoard::new_setup();
+        let board = Board::new_setup();
         let hash1 = board.zobrist_hash;
         assert_ne!(board.zobrist_hash, 0);
 
-        let board = BitBoard::new_setup();
+        let board = Board::new_setup();
         assert_eq!(board.zobrist_hash, hash1);
     }
 
     #[test]
     fn zobrist_hash_moves() {
-        let board = BitBoard::new_setup();
+        let board = Board::new_setup();
 
         // Check if a move yields a new hash.
         let board2 = board.apply_move(|b| {
@@ -2013,7 +2007,7 @@ mod tests {
         assert_ne!(board2.zobrist_hash, board.zobrist_hash);
 
         // Check if doing the same thing with a new board yields the same hash.
-        let board3 = BitBoard::new_setup().apply_move(|b| {
+        let board3 = Board::new_setup().apply_move(|b| {
             b.pawns[COLOR_WHITE].move_bit(48, 40);
         });
         assert_eq!(board3.zobrist_hash, board2.zobrist_hash);
@@ -2063,7 +2057,7 @@ mod tests {
 
     #[test]
     fn zobrist_hash_castling() {
-        let board = BitBoard::new_setup();
+        let board = Board::new_setup();
         let board2 = board
             .apply_move(|b| {
                 b.can_castle[COLOR_WHITE][SIDE_QUEEN] = false;
@@ -2085,7 +2079,7 @@ mod tests {
 
     #[test]
     fn perft_low() {
-        let board = BitBoard::new_setup();
+        let board = Board::new_setup();
 
         assert_eq!(board.perft(1), 20);
         assert_eq!(board.perft(2), 400);
@@ -2096,7 +2090,7 @@ mod tests {
     #[ignore]
     #[test]
     fn perft_high() {
-        let board = BitBoard::new_setup();
+        let board = Board::new_setup();
 
         assert_eq!(board.perft(5), 4_865_609);
         assert_eq!(board.perft(6), 119_060_324);
@@ -2104,7 +2098,7 @@ mod tests {
 
     #[test]
     fn perft_kiwipete() {
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0",
         )
         .unwrap();
@@ -2117,7 +2111,7 @@ mod tests {
     fn perft_position_5() {
         // See https://www.chessprogramming.org/Perft_Results
         let board =
-            BitBoard::try_parse_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8")
+            Board::try_parse_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8")
                 .unwrap();
 
         assert_eq!(board.perft(3), 62_379);
@@ -2127,7 +2121,7 @@ mod tests {
     #[test]
     fn perft_position_6() {
         // See https://www.chessprogramming.org/Perft_Results
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
         )
         .unwrap();
@@ -2142,7 +2136,7 @@ mod tests {
     #[test]
     fn perft_chessprogramming() {
         // See https://www.chessprogramming.net/is-perft-speed-important/
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0",
         )
         .unwrap();
@@ -2152,7 +2146,7 @@ mod tests {
 
     #[test]
     fn halfmove_clock() {
-        let board = BitBoard::try_parse_fen(
+        let board = Board::try_parse_fen(
             "2b5/p2NBp1p/1bp1nPPr/3P4/2pRnr1P/1k1B1Ppp/1P1P1pQP/Rq1N3K w - - 5 1",
         )
         .unwrap();
