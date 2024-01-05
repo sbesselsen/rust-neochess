@@ -189,7 +189,7 @@ impl Engine {
             let score = if board.is_check() {
                 EvaluatorScore::MinusInfinity
             } else {
-                EvaluatorScore::Value(0.0)
+                EvaluatorScore::Value(0)
             };
             return (None, score);
         }

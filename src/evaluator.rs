@@ -2,10 +2,10 @@ use std::{cmp::Ordering, fmt::Display, ops::Neg};
 
 use crate::bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK};
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum EvaluatorScore {
     MinusInfinity,
-    Value(f64),
+    Value(i32),
     PlusInfinity,
 }
 
@@ -38,7 +38,10 @@ impl Neg for EvaluatorScore {
 impl std::hash::Hash for EvaluatorScore {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            EvaluatorScore::Value(x) => state.write_i64((x * 1_000_000.0) as i64),
+            EvaluatorScore::Value(x) => {
+                state.write_u8(0);
+                state.write_i32(*x);
+            }
             EvaluatorScore::MinusInfinity => {
                 state.write_u8(1);
             }
@@ -49,9 +52,6 @@ impl std::hash::Hash for EvaluatorScore {
         state.finish();
     }
 }
-
-/* Don't be putting any NaN in my values okay? */
-impl Eq for EvaluatorScore {}
 
 impl PartialOrd for EvaluatorScore {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -71,15 +71,7 @@ impl Ord for EvaluatorScore {
             (EvaluatorScore::PlusInfinity, EvaluatorScore::PlusInfinity) => Ordering::Equal,
             (EvaluatorScore::PlusInfinity, _) => Ordering::Greater,
             (_, EvaluatorScore::PlusInfinity) => Ordering::Less,
-            (EvaluatorScore::Value(x), EvaluatorScore::Value(y)) => {
-                if x < y {
-                    Ordering::Less
-                } else if x > y {
-                    Ordering::Greater
-                } else {
-                    Ordering::Equal
-                }
-            }
+            (EvaluatorScore::Value(x), EvaluatorScore::Value(y)) => x.cmp(y),
         }
     }
 }
@@ -125,20 +117,20 @@ impl Evaluator for DefaultEvaluator {
             return EvaluatorScore::PlusInfinity;
         }
         EvaluatorScore::Value(
-            (board.pawns[COLOR_WHITE].count_ones() as f64
-                - board.pawns[COLOR_BLACK].count_ones() as f64)
-                + 5.0
-                    * (board.rooks[COLOR_WHITE].count_ones() as f64
-                        - board.rooks[COLOR_BLACK].count_ones() as f64)
-                + 3.0
-                    * (board.knights[COLOR_WHITE].count_ones() as f64
-                        - board.knights[COLOR_BLACK].count_ones() as f64)
-                + 3.0
-                    * (board.bishops[COLOR_WHITE].count_ones() as f64
-                        - board.bishops[COLOR_BLACK].count_ones() as f64)
-                + 9.0
-                    * (board.queens[COLOR_WHITE].count_ones() as f64
-                        - board.queens[COLOR_BLACK].count_ones() as f64),
+            100 * (board.pawns[COLOR_WHITE].count_ones() as i32
+                - board.pawns[COLOR_BLACK].count_ones() as i32)
+                + 500
+                    * (board.rooks[COLOR_WHITE].count_ones() as i32
+                        - board.rooks[COLOR_BLACK].count_ones() as i32)
+                + 300
+                    * (board.knights[COLOR_WHITE].count_ones() as i32
+                        - board.knights[COLOR_BLACK].count_ones() as i32)
+                + 300
+                    * (board.bishops[COLOR_WHITE].count_ones() as i32
+                        - board.bishops[COLOR_BLACK].count_ones() as i32)
+                + 900
+                    * (board.queens[COLOR_WHITE].count_ones() as i32
+                        - board.queens[COLOR_BLACK].count_ones() as i32),
         )
     }
 
@@ -205,9 +197,9 @@ mod tests {
         let eval = DefaultEvaluator::new();
         assert_eq!(
             eval.evaluate(&BitBoard::new_setup()),
-            EvaluatorScore::Value(0.0)
+            EvaluatorScore::Value(0)
         );
-        assert_eq!(eval.evaluate(&BitBoard::new()), EvaluatorScore::Value(0.0));
+        assert_eq!(eval.evaluate(&BitBoard::new()), EvaluatorScore::Value(0));
     }
 
     #[test]
@@ -225,7 +217,7 @@ mod tests {
             b.king[COLOR_WHITE] = 0;
             b.king[COLOR_BLACK] = 0;
         });
-        assert_eq!(eval.evaluate(&board), EvaluatorScore::Value(0.0));
+        assert_eq!(eval.evaluate(&board), EvaluatorScore::Value(0));
     }
 
     #[test]
@@ -233,6 +225,6 @@ mod tests {
         let eval = DefaultEvaluator::new();
         let board =
             BitBoard::try_parse_fen("8/6p1/1N1kbp2/1p2pR2/6P1/3PBBNr/1P6/3K4 w - - 0 1").unwrap();
-        assert_eq!(eval.evaluate(&board), EvaluatorScore::Value(8.0));
+        assert_eq!(eval.evaluate(&board), EvaluatorScore::Value(800));
     }
 }
