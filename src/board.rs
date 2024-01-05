@@ -142,6 +142,32 @@ impl Display for FenParseError {
     }
 }
 
+#[derive(Debug)]
+pub struct BoardMoveError {
+    message: String,
+}
+
+impl From<String> for BoardMoveError {
+    fn from(message: String) -> Self {
+        BoardMoveError { message }
+    }
+}
+
+impl From<&str> for BoardMoveError {
+    fn from(message: &str) -> Self {
+        BoardMoveError {
+            message: String::from(message),
+        }
+    }
+}
+
+impl Display for BoardMoveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("BoardMoveError: ")?;
+        f.write_str(&self.message)
+    }
+}
+
 impl Hash for Board {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.zobrist_hash.hash(state);
@@ -997,6 +1023,118 @@ impl Board {
             // Update the zobrist hash.
             b.update_hash(self);
         })
+    }
+
+    pub fn apply_board_move(&self, board_move: &BoardMove) -> Result<Board, BoardMoveError> {
+        let BoardMove {
+            from_index,
+            to_index,
+            promote_to,
+        } = board_move;
+
+        let (piece, color) = self
+            .piece_at_index(*from_index)
+            .ok_or_else(|| BoardMoveError::from("No piece at from_index of the move"))?;
+        if (color as usize) != self.active_color {
+            return Err(BoardMoveError::from(
+                "Moved piece does not belong to active color",
+            ));
+        }
+
+        let mut apply_result: Result<(), BoardMoveError> = Ok(());
+
+        let board = self.apply_mutation(|b| {
+            let opponent_color = self.active_color.opponent();
+
+            // Clear the target square.
+            b.clear_square(opponent_color, *to_index);
+
+            if let Some(promote_to_piece) = promote_to {
+                // Promotion.
+                b.pawns[self.active_color].set_bit(*from_index, false);
+                match promote_to_piece {
+                    Piece::Pawn => {
+                        b.pawns[self.active_color].set_bit(*to_index, true);
+                    }
+                    Piece::Rook => {
+                        b.rooks[self.active_color].set_bit(*to_index, true);
+                    }
+                    Piece::Knight => {
+                        b.knights[self.active_color].set_bit(*to_index, true);
+                    }
+                    Piece::Bishop => {
+                        b.bishops[self.active_color].set_bit(*to_index, true);
+                    }
+                    Piece::Queen => {
+                        b.queens[self.active_color].set_bit(*to_index, true);
+                    }
+                    Piece::King => {
+                        apply_result = Err(BoardMoveError::from("Cannot promote to king"));
+                    }
+                }
+                return;
+            }
+
+            match piece {
+                Piece::Pawn => {
+                    b.pawns[self.active_color].move_bit(*from_index, *to_index);
+
+                    if self.active_color == COLOR_WHITE && *to_index == *from_index - 16 {
+                        b.en_passant_square = Some(*from_index - 8);
+                    } else if self.active_color == COLOR_BLACK && *to_index == *from_index + 16 {
+                        b.en_passant_square = Some(*from_index + 8);
+                    }
+
+                    if let Some(en_passant_index) = self.en_passant_square {
+                        if en_passant_index == *to_index && piece == Piece::Pawn {
+                            // Holy hell!
+                            let captured_pawn_index = self
+                                .active_color
+                                .wb(en_passant_index + 8, en_passant_index - 8);
+                            b.pawns[opponent_color].set_bit(captured_pawn_index, false);
+                        }
+                    }
+                }
+                Piece::Rook => {
+                    b.rooks[self.active_color].move_bit(*from_index, *to_index);
+                }
+                Piece::Knight => {
+                    b.knights[self.active_color].move_bit(*from_index, *to_index);
+                }
+                Piece::Bishop => {
+                    b.bishops[self.active_color].move_bit(*from_index, *to_index);
+                }
+                Piece::Queen => {
+                    b.queens[self.active_color].move_bit(*from_index, *to_index);
+                }
+                Piece::King => {
+                    b.king[self.active_color].move_bit(*from_index, *to_index);
+
+                    // Is this castling?
+                    let home_rank_offset = self.active_color.wb(56, 0);
+                    if *from_index == home_rank_offset + 4 && *to_index == home_rank_offset + 6 {
+                        // Kingside castling.
+                        if !self.can_castle[self.active_color][SIDE_KING] {
+                            apply_result = Err(BoardMoveError::from("Cannot castle kingside"));
+                            return;
+                        }
+                        b.rooks[self.active_color]
+                            .move_bit(home_rank_offset + 7, home_rank_offset + 5);
+                    } else if *from_index == home_rank_offset + 4
+                        && *to_index == home_rank_offset + 2
+                    {
+                        // Queenside castling.
+                        if !self.can_castle[self.active_color][SIDE_QUEEN] {
+                            apply_result = Err(BoardMoveError::from("Cannot castle queenside"));
+                            return;
+                        }
+                        b.rooks[self.active_color].move_bit(home_rank_offset, home_rank_offset + 3);
+                    }
+                }
+            }
+        });
+
+        apply_result.map(|_| board)
     }
 
     pub fn occupancy_bits(&self) -> u64 {
@@ -2334,5 +2472,83 @@ mod tests {
 
         let mv = BoardMove::new_promotion(55, 63, Piece::Rook);
         assert_eq!(format!("{}", mv), "h2-h1=R");
+    }
+
+    #[test]
+    fn apply_castling_board_moves() {
+        let board = Board::try_parse_fen(
+            "r1b1kb1r/1ppq1ppp/p1np4/1B2p1B1/4P1n1/2NP1N2/PPPQ1PPP/R3K2R w KQkq - 0 8",
+        )
+        .unwrap();
+        let mut moves: Vec<Board> = vec![];
+        board.push_king_moves(&mut moves);
+        assert_eq!(moves.len(), 5);
+
+        let board_moves: Vec<BoardMove> = moves
+            .iter()
+            .filter_map(|b| board.as_board_move(b))
+            .collect();
+        assert_eq!(board_moves.len(), moves.len());
+
+        let boards2: Vec<Board> = board_moves
+            .iter()
+            .filter_map(|mv| board.apply_board_move(mv).ok())
+            .collect();
+        assert_eq!(boards2.len(), moves.len());
+        assert_eq!(boards2, moves);
+    }
+
+    #[test]
+    fn apply_en_passant_board_moves() {
+        let mut board = Board::new_setup();
+        board.pawns[COLOR_BLACK] |= 0x0000000040000000;
+
+        let next_boards = board.next_boards();
+
+        let en_passants: Vec<Board> = next_boards
+            .into_iter()
+            .filter(|b| b.en_passant_square.is_some())
+            .collect();
+        assert_eq!(en_passants.len(), 7);
+
+        let en_passant_captures: Vec<(Board, Board)> = en_passants
+            .into_iter()
+            .flat_map(|b| {
+                b.next_boards()
+                    .into_iter()
+                    .map(|next| (b.clone(), next))
+                    .collect::<Vec<(Board, Board)>>()
+            })
+            .filter(|(_, next)| (next.pawns[COLOR_WHITE] & (RANK_0_MASK << 24)) == 0)
+            .collect();
+        assert_eq!(en_passant_captures.len(), 2);
+
+        for (from_board, to_board) in en_passant_captures {
+            let mv = from_board.as_board_move(&to_board).unwrap();
+            let b = from_board.apply_board_move(&mv).unwrap();
+            assert_eq!(b, to_board);
+        }
+    }
+
+    #[test]
+    fn apply_kiwipete_board_moves() {
+        let board = Board::try_parse_fen(
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0",
+        )
+        .unwrap();
+        let b1: Vec<Board> = board.next_boards();
+        let b2: Vec<Board> = b1.into_iter().flat_map(|b| b.next_boards()).collect();
+        let mut counter = 0;
+
+        for b in b2 {
+            for b3 in b.next_boards() {
+                let mv = b.as_board_move(&b3).unwrap();
+                let board_after_move = b.apply_board_move(&mv).unwrap();
+                assert_eq!(board_after_move, b3);
+                counter += 1;
+            }
+        }
+
+        assert_eq!(counter, 97_862);
     }
 }
