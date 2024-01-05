@@ -88,7 +88,7 @@ impl Display for EvaluatorScore {
 
 pub trait Evaluator {
     fn evaluate(&self, board: &Board, for_color: usize) -> EvaluatorScore;
-    fn order_moves(&self, prev_board: &Board, boards: &mut Vec<Board>);
+    fn evaluate_move_by_board(&self, prev_board: &Board, board: &Board) -> i32;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -143,52 +143,50 @@ impl Evaluator for DefaultEvaluator {
         }
     }
 
-    fn order_moves(&self, prev_board: &Board, boards: &mut Vec<Board>) {
-        boards.sort_by_cached_key(|b| {
-            if b.is_check() {
-                // Checks go first!
-                return -10;
-            }
+    fn evaluate_move_by_board(&self, prev_board: &Board, board: &Board) -> i32 {
+        if board.is_check() {
+            // Checks go first!
+            return -10;
+        }
 
-            let promotion_rank_mask = if prev_board.active_color == COLOR_WHITE {
-                RANK_0_MASK << 48
-            } else {
-                RANK_0_MASK << 8
-            };
-            if (prev_board.pawns[prev_board.active_color] & !b.pawns[prev_board.active_color])
-                & promotion_rank_mask
-                > 0
-            {
-                // This is a promotion.
-                return -5;
-            }
+        let promotion_rank_mask = if prev_board.active_color == COLOR_WHITE {
+            RANK_0_MASK << 48
+        } else {
+            RANK_0_MASK << 8
+        };
+        if (prev_board.pawns[prev_board.active_color] & !board.pawns[prev_board.active_color])
+            & promotion_rank_mask
+            > 0
+        {
+            // This is a promotion.
+            return -5;
+        }
 
-            let self_occupancy = b.occupancy_bits_for(b.active_color);
-            let prev_self_occupancy = prev_board.occupancy_bits_for(b.active_color);
+        let self_occupancy = board.occupancy_bits_for(board.active_color);
+        let prev_self_occupancy = prev_board.occupancy_bits_for(board.active_color);
 
-            if self_occupancy != prev_self_occupancy {
-                let captured_mask = prev_self_occupancy & !self_occupancy;
+        if self_occupancy != prev_self_occupancy {
+            let captured_mask = prev_self_occupancy & !self_occupancy;
 
-                // What was captured?
-                let captured_value = (captured_mask & prev_board.pawns[b.active_color])
-                    .count_ones()
-                    + 5 * (captured_mask & prev_board.rooks[b.active_color]).count_ones()
-                    + 3 * (captured_mask & prev_board.knights[b.active_color]).count_ones()
-                    + 3 * (captured_mask & prev_board.bishops[b.active_color]).count_ones()
-                    + 9 * (captured_mask & prev_board.queens[b.active_color]).count_ones();
+            // What was captured?
+            let captured_value = (captured_mask & prev_board.pawns[board.active_color])
+                .count_ones()
+                + 5 * (captured_mask & prev_board.rooks[board.active_color]).count_ones()
+                + 3 * (captured_mask & prev_board.knights[board.active_color]).count_ones()
+                + 3 * (captured_mask & prev_board.bishops[board.active_color]).count_ones()
+                + 9 * (captured_mask & prev_board.queens[board.active_color]).count_ones();
 
-                let capturer_value = (captured_mask & b.pawns[prev_board.active_color])
-                    .count_ones()
-                    + 5 * (captured_mask & b.rooks[prev_board.active_color]).count_ones()
-                    + 3 * (captured_mask & b.knights[prev_board.active_color]).count_ones()
-                    + 3 * (captured_mask & b.bishops[prev_board.active_color]).count_ones()
-                    + 9 * (captured_mask & b.queens[prev_board.active_color]).count_ones();
+            let capturer_value = (captured_mask & board.pawns[prev_board.active_color])
+                .count_ones()
+                + 5 * (captured_mask & board.rooks[prev_board.active_color]).count_ones()
+                + 3 * (captured_mask & board.knights[prev_board.active_color]).count_ones()
+                + 3 * (captured_mask & board.bishops[prev_board.active_color]).count_ones()
+                + 9 * (captured_mask & board.queens[prev_board.active_color]).count_ones();
 
-                // MVV-LVA
-                return (capturer_value as i32) - (captured_value as i32);
-            }
-            100
-        });
+            // MVV-LVA
+            return (capturer_value as i32) - (captured_value as i32);
+        }
+        100
     }
 }
 

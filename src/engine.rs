@@ -56,6 +56,7 @@ struct TranspositionTableEntry {
 pub struct Engine {
     evaluator: Box<dyn Evaluator>,
     transposition_table: Vec<Option<TranspositionTableEntry>>,
+    stats: EngineStats,
 }
 
 impl Debug for Engine {
@@ -65,6 +66,11 @@ impl Debug for Engine {
             .field("transposition_table", &self.transposition_table)
             .finish()
     }
+}
+#[derive(Copy, Clone, Debug, Default)]
+pub struct EngineStats {
+    nodes: u32,
+    leaves: u32,
 }
 
 impl From<EngineBuilder> for Engine {
@@ -81,6 +87,7 @@ impl From<EngineBuilder> for Engine {
         Engine {
             evaluator,
             transposition_table,
+            stats: EngineStats::default(),
         }
     }
 }
@@ -94,6 +101,10 @@ impl Default for Engine {
 impl Engine {
     pub fn search(&mut self, board: &Board, depth: u32) -> (Option<Board>, EvaluatorScore) {
         assert!(depth > 0, "depth should be at least 1");
+
+        // Reset stats
+        self.stats = EngineStats::default();
+
         let (mv, score) = self.search_inner(
             board,
             depth,
@@ -113,6 +124,10 @@ impl Engine {
         }
     }
 
+    pub fn stats(&self) -> EngineStats {
+        self.stats
+    }
+
     fn search_inner(
         &mut self,
         board: &Board,
@@ -121,6 +136,8 @@ impl Engine {
         alpha: EvaluatorScore,
         beta: EvaluatorScore,
     ) -> (Option<BoardMove>, EvaluatorScore) {
+        self.stats.nodes += 1;
+
         let alpha_orig = alpha;
         let mut alpha = alpha;
         let mut beta = beta;
@@ -135,7 +152,7 @@ impl Engine {
                 match entry.bound {
                     TranspositionTableBound::Exact => {
                         // We know the exact score. We can return it!
-                        return (None, entry.score);
+                        return (entry.best_move, entry.score);
                     }
                     TranspositionTableBound::Lower => {
                         // We know a lower bound for this board.
@@ -155,6 +172,7 @@ impl Engine {
         }
 
         if depth == 0 {
+            self.stats.leaves += 1;
             return (None, self.evaluator.evaluate(board, board.active_color));
         }
 
@@ -177,7 +195,20 @@ impl Engine {
         }
 
         let mut next_boards = board.next_boards();
-        self.order_boards(board, &mut next_boards);
+
+        // Order moves: best move from transposition table goes first, then order heuristically.
+        let tt_best_board = tt_entry
+            .map(|e| e.best_move.map(|mv| board.apply_board_move(&mv).ok()))
+            .flatten()
+            .flatten();
+        next_boards.sort_by_cached_key(|b| {
+            if let Some(tt_best_board) = &tt_best_board {
+                if b == tt_best_board {
+                    return -1000;
+                }
+            }
+            self.evaluator.evaluate_move_by_board(board, b)
+        });
 
         if next_boards.is_empty() {
             let score = if board.is_check() {
@@ -238,10 +269,6 @@ impl Engine {
         }
 
         (best_move, best_score)
-    }
-
-    fn order_boards(&self, prev_board: &Board, boards: &mut Vec<Board>) {
-        self.evaluator.order_moves(prev_board, boards);
     }
 }
 
