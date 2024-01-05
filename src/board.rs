@@ -1378,10 +1378,10 @@ impl Board {
     }
 
     fn coords_to_string(index: u32) -> String {
-        let file_index = index % 8;
-        let rank_index = 8 - (index / 8);
-        debug_assert!(rank_index < 8, "invalid rank_index");
-        Self::file_to_char(file_index + 1).to_string() + &rank_index.to_string()
+        let file_number = index % 8 + 1;
+        let rank_number = 8 - (index / 8);
+        debug_assert!(rank_number <= 8, "invalid rank_number");
+        Self::file_to_char(file_number).to_string() + &rank_number.to_string()
     }
 
     fn try_parse_coords(coords: &str) -> Result<(u32, u32), ()> {
