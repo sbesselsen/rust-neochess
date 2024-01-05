@@ -1615,6 +1615,16 @@ mod tests {
         assert_eq!(board.unwrap().to_fen(), fen);
     }
 
+    #[test]
+    fn board_parser_works_2() {
+        let fen = "r1bqkb1r/1ppppppp/2n5/p7/8/2N4N/PPPPPPP1/R1BQ1K1R w kq a6 10 6";
+        let board = Board::try_parse_fen(fen);
+        assert!(board.is_ok());
+        let board = board.unwrap();
+        assert_eq!(board.en_passant_square, Some(16));
+        assert_eq!(board.to_fen(), fen);
+    }
+
     fn test_move_counts(
         fen: &str,
         pawn_moves: usize,
