@@ -1490,6 +1490,7 @@ impl Debug for Board {
             .field("en_passant_square", &self.en_passant_square)
             .field("halfmove_clock", &self.halfmove_clock)
             .field("fullmove_number", &self.fullmove_number)
+            .field("zobrist_hash", &self.zobrist_hash)
             .finish()
     }
 }
