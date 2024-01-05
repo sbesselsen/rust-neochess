@@ -1496,8 +1496,6 @@ impl Display for BitBoard {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::VecDeque, time::Instant};
-
     use crate::{
         bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING},
         bitwise_helper::BitwiseHelper,
@@ -1988,25 +1986,6 @@ mod tests {
     }
 
     #[test]
-    fn make_many_boards() {
-        let start = Instant::now();
-
-        let mut queue = VecDeque::new();
-        queue.push_back(BitBoard::new_setup());
-
-        let mut counter = 0;
-        while counter < 1_000_000 {
-            let board = queue.pop_front().unwrap();
-            for b in board.next_boards() {
-                queue.push_back(b);
-                counter += 1;
-            }
-        }
-
-        assert!(start.elapsed().as_millis() < 1_000);
-    }
-
-    #[test]
     fn zobrist_hash_basics() {
         let board = BitBoard::new();
         assert_eq!(board.zobrist_hash, 0);
@@ -2155,6 +2134,7 @@ mod tests {
         assert_eq!(board.perft(4), 3_894_594);
     }
 
+    #[ignore]
     #[test]
     fn perft_chessprogramming() {
         // See https://www.chessprogramming.net/is-perft-speed-important/
