@@ -62,7 +62,7 @@ fn main() {
                 )
             })
             .collect();
-        if moves_boards.len() == 0 {
+        if moves_boards.is_empty() {
             println!("You are out of moves!");
             if board.is_checkmate() {
                 println!("I win!");
@@ -116,7 +116,7 @@ fn read_line(input: &str) -> String {
     let mut buf = String::new();
     loop {
         let result = stdin().lock().read_line(&mut buf);
-        if let Ok(_) = result {
+        if result.is_ok() {
             let option = buf.trim_end();
             return String::from(option);
         }

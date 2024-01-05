@@ -186,7 +186,7 @@ impl Evaluator for DefaultEvaluator {
                 // MVV-LVA
                 return (capturer_value - captured_value) as i32;
             }
-            return 100;
+            100
         });
     }
 }

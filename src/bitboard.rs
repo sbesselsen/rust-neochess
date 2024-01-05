@@ -392,7 +392,7 @@ impl BitBoard {
                 return false;
             }
         }
-        return true;
+        true
     }
 
     pub fn to_fen(&self) -> String {
