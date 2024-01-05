@@ -831,12 +831,22 @@ impl BitBoard {
         self.apply_mutation(|b| {
             b.en_passant_square = None;
             f(b);
-            b.halfmove_clock ^= 1;
             if b.active_color == COLOR_WHITE {
                 b.active_color = COLOR_BLACK;
             } else {
                 b.active_color = COLOR_WHITE;
                 b.fullmove_number += 1;
+            }
+            if b.pawns[self.active_color] != self.pawns[self.active_color] {
+                // Pawn move.
+                b.halfmove_clock = 0;
+            } else if b.occupancy_bits_for(b.active_color)
+                != self.occupancy_bits_for(b.active_color)
+            {
+                // Capture.
+                b.halfmove_clock = 0;
+            } else {
+                b.halfmove_clock += 1;
             }
 
             // Update castling based on whether the rook or king moved
@@ -1497,11 +1507,9 @@ impl Display for BitBoard {
 #[cfg(test)]
 mod tests {
     use crate::{
-        bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING},
+        bitboard::{BitBoard, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING, SIDE_QUEEN},
         bitwise_helper::BitwiseHelper,
     };
-
-    use super::SIDE_QUEEN;
 
     #[test]
     fn empty_board_works() {
@@ -2144,5 +2152,36 @@ mod tests {
         .unwrap();
 
         assert_eq!(board.perft(5), 193_690_690);
+    }
+
+    #[test]
+    fn halfmove_clock() {
+        let board = BitBoard::try_parse_fen(
+            "2b5/p2NBp1p/1bp1nPPr/3P4/2pRnr1P/1k1B1Ppp/1P1P1pQP/Rq1N3K w - - 5 1",
+        )
+        .unwrap();
+        let halfmove_clock = board.halfmove_clock;
+
+        assert_eq!(halfmove_clock, 5);
+        assert_eq!(board.active_color, COLOR_WHITE);
+
+        let b = board.apply_move(|b| {
+            b.bishops[COLOR_WHITE].move_bit(12, 19);
+        });
+
+        assert_eq!(b.halfmove_clock, halfmove_clock + 1);
+
+        let b = board.apply_move(|b| {
+            b.pawns[COLOR_WHITE].move_bit(22, 14);
+        });
+
+        assert_eq!(b.halfmove_clock, 0);
+
+        let b = board.apply_move(|b| {
+            b.bishops[COLOR_WHITE].move_bit(43, 57);
+            b.queens[COLOR_BLACK].set_bit(57, false);
+        });
+
+        assert_eq!(b.halfmove_clock, 0);
     }
 }
