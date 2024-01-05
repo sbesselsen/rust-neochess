@@ -413,7 +413,11 @@ impl Board {
     }
 
     pub fn next_boards(&self) -> Vec<Board> {
-        let mut output = Vec::with_capacity(40);
+        self.next_moves().into_iter().map(|(_, b)| b).collect()
+    }
+
+    pub fn next_moves(&self) -> Vec<(BoardMove, Board)> {
+        let mut output: Vec<(BoardMove, Board)> = Vec::with_capacity(40);
 
         self.push_pawn_moves(&mut output);
         self.push_rooklike_moves(&mut output);
@@ -427,8 +431,8 @@ impl Board {
         output
     }
 
-    fn remove_checks(boards: &mut Vec<Board>) {
-        boards.retain_mut(|b| {
+    fn remove_checks(boards: &mut Vec<(BoardMove, Board)>) {
+        boards.retain_mut(|(_, b)| {
             b.active_color = b.active_color.opponent();
             let is_check = b.is_check();
             b.active_color = b.active_color.opponent();
@@ -990,7 +994,7 @@ impl Board {
         })
     }
 
-    fn push_knight_moves(&self, output: &mut Vec<Board>) {
+    fn push_knight_moves(&self, output: &mut Vec<(BoardMove, Board)>) {
         if self.knights[self.active_color] == 0 {
             return;
         }
@@ -1000,12 +1004,15 @@ impl Board {
 
         for (index, to_mask) in self.knight_moves_masks(self.knights[self.active_color]) {
             for to_index in to_mask.as_bit_index_iter() {
-                output.push(self.apply_move(|b| {
-                    b.knights[self.active_color].move_bit(index, to_index);
-                    if opponent_occupancy.bit_at_index(to_index) {
-                        b.clear_square(opponent_color, to_index);
-                    }
-                }));
+                output.push((
+                    BoardMove::new(index, to_index),
+                    self.apply_move(|b| {
+                        b.knights[self.active_color].move_bit(index, to_index);
+                        if opponent_occupancy.bit_at_index(to_index) {
+                            b.clear_square(opponent_color, to_index);
+                        }
+                    }),
+                ));
             }
         }
     }
@@ -1059,7 +1066,7 @@ impl Board {
         })
     }
 
-    fn push_rooklike_moves(&self, output: &mut Vec<Board>) {
+    fn push_rooklike_moves(&self, output: &mut Vec<(BoardMove, Board)>) {
         let rooklike_mask = self.rooks[self.active_color] | self.queens[self.active_color];
 
         if rooklike_mask == 0 {
@@ -1071,13 +1078,16 @@ impl Board {
 
         for (index, to_mask) in self.rooklike_moves_masks(rooklike_mask) {
             for to_index in to_mask.as_bit_index_iter() {
-                output.push(self.apply_move(|b| {
-                    b.queens[self.active_color].move_bit(index, to_index);
-                    b.rooks[self.active_color].move_bit(index, to_index);
-                    if opponent_occupancy.bit_at_index(to_index) {
-                        b.clear_square(opponent_color, to_index);
-                    }
-                }));
+                output.push((
+                    BoardMove::new(index, to_index),
+                    self.apply_move(|b| {
+                        b.queens[self.active_color].move_bit(index, to_index);
+                        b.rooks[self.active_color].move_bit(index, to_index);
+                        if opponent_occupancy.bit_at_index(to_index) {
+                            b.clear_square(opponent_color, to_index);
+                        }
+                    }),
+                ));
             }
         }
     }
@@ -1134,7 +1144,7 @@ impl Board {
         })
     }
 
-    fn push_bishoplike_moves(&self, output: &mut Vec<Board>) {
+    fn push_bishoplike_moves(&self, output: &mut Vec<(BoardMove, Board)>) {
         let bishoplike_mask = self.bishops[self.active_color] | self.queens[self.active_color];
 
         if bishoplike_mask == 0 {
@@ -1146,18 +1156,21 @@ impl Board {
 
         for (index, to_mask) in self.bishoplike_moves_masks(bishoplike_mask) {
             for to_index in to_mask.as_bit_index_iter() {
-                output.push(self.apply_move(|b| {
-                    b.queens[self.active_color].move_bit(index, to_index);
-                    b.bishops[self.active_color].move_bit(index, to_index);
-                    if opponent_occupancy.bit_at_index(to_index) {
-                        b.clear_square(opponent_color, to_index);
-                    }
-                }));
+                output.push((
+                    BoardMove::new(index, to_index),
+                    self.apply_move(|b| {
+                        b.queens[self.active_color].move_bit(index, to_index);
+                        b.bishops[self.active_color].move_bit(index, to_index);
+                        if opponent_occupancy.bit_at_index(to_index) {
+                            b.clear_square(opponent_color, to_index);
+                        }
+                    }),
+                ));
             }
         }
     }
 
-    fn push_pawn_moves(&self, output: &mut Vec<Board>) {
+    fn push_pawn_moves(&self, output: &mut Vec<(BoardMove, Board)>) {
         if self.pawns[self.active_color] == 0 {
             return;
         }
@@ -1174,9 +1187,12 @@ impl Board {
         for to_index in (move_1_mask & !promote_mask).as_bit_index_iter() {
             // Normal move forward.
             let from_index = (to_index as i32) - move_offset;
-            output.push(self.apply_move(|b| {
-                b.pawns[self.active_color].move_bit(from_index as u32, to_index);
-            }));
+            output.push((
+                BoardMove::new(from_index as u32, to_index),
+                self.apply_move(|b| {
+                    b.pawns[self.active_color].move_bit(from_index as u32, to_index);
+                }),
+            ));
         }
         for to_index in promote_mask.as_bit_index_iter() {
             // Promote pawn by moving 1 step forward.
@@ -1192,10 +1208,13 @@ impl Board {
             let en_passant_index = (to_index as i32) - move_offset;
             let from_index = en_passant_index - move_offset;
 
-            output.push(self.apply_move(|b| {
-                b.pawns[self.active_color].move_bit(from_index as u32, to_index);
-                b.en_passant_square = Some(en_passant_index as u32);
-            }));
+            output.push((
+                BoardMove::new(from_index as u32, to_index),
+                self.apply_move(|b| {
+                    b.pawns[self.active_color].move_bit(from_index as u32, to_index);
+                    b.en_passant_square = Some(en_passant_index as u32);
+                }),
+            ));
         }
 
         // Capture.
@@ -1218,64 +1237,104 @@ impl Board {
         }
     }
 
-    fn push_pawn_captures(&self, from_index: u32, to_index: u32, output: &mut Vec<Board>) {
+    fn push_pawn_captures(
+        &self,
+        from_index: u32,
+        to_index: u32,
+        output: &mut Vec<(BoardMove, Board)>,
+    ) {
         let opponent_color = self.active_color.opponent();
 
         if self.en_passant_square == Some(to_index) {
             // Avoid the brick.
-            output.push(self.apply_move(|b| {
-                let clear_index = self.active_color.wb(to_index + 8, to_index - 8);
-                b.pawns[self.active_color].move_bit(from_index, to_index);
-                b.clear_square(opponent_color, clear_index);
-            }));
+            output.push((
+                BoardMove::new(from_index, to_index),
+                self.apply_move(|b| {
+                    let clear_index = self.active_color.wb(to_index + 8, to_index - 8);
+                    b.pawns[self.active_color].move_bit(from_index, to_index);
+                    b.clear_square(opponent_color, clear_index);
+                }),
+            ));
         } else if !(8..=56).contains(&to_index) {
             // This is a capture with promotion.
-            output.push(self.apply_move(|b| {
-                b.pawns[self.active_color].set_bit(from_index, false);
-                b.rooks[self.active_color].set_bit(to_index, true);
-                b.clear_square(opponent_color, to_index);
-            }));
-            output.push(self.apply_move(|b| {
-                b.pawns[self.active_color].set_bit(from_index, false);
-                b.bishops[self.active_color].set_bit(to_index, true);
-                b.clear_square(opponent_color, to_index);
-            }));
-            output.push(self.apply_move(|b| {
-                b.pawns[self.active_color].set_bit(from_index, false);
-                b.knights[self.active_color].set_bit(to_index, true);
-                b.clear_square(opponent_color, to_index);
-            }));
-            output.push(self.apply_move(|b| {
-                b.pawns[self.active_color].set_bit(from_index, false);
-                b.queens[self.active_color].set_bit(to_index, true);
-                b.clear_square(opponent_color, to_index);
-            }));
+            output.push((
+                BoardMove::new_promotion(from_index, to_index, Piece::Rook),
+                self.apply_move(|b| {
+                    b.pawns[self.active_color].set_bit(from_index, false);
+                    b.rooks[self.active_color].set_bit(to_index, true);
+                    b.clear_square(opponent_color, to_index);
+                }),
+            ));
+            output.push((
+                BoardMove::new_promotion(from_index, to_index, Piece::Bishop),
+                self.apply_move(|b| {
+                    b.pawns[self.active_color].set_bit(from_index, false);
+                    b.bishops[self.active_color].set_bit(to_index, true);
+                    b.clear_square(opponent_color, to_index);
+                }),
+            ));
+            output.push((
+                BoardMove::new_promotion(from_index, to_index, Piece::Knight),
+                self.apply_move(|b| {
+                    b.pawns[self.active_color].set_bit(from_index, false);
+                    b.knights[self.active_color].set_bit(to_index, true);
+                    b.clear_square(opponent_color, to_index);
+                }),
+            ));
+            output.push((
+                BoardMove::new_promotion(from_index, to_index, Piece::Queen),
+                self.apply_move(|b| {
+                    b.pawns[self.active_color].set_bit(from_index, false);
+                    b.queens[self.active_color].set_bit(to_index, true);
+                    b.clear_square(opponent_color, to_index);
+                }),
+            ));
         } else {
             // This is a normal capture.
-            output.push(self.apply_move(|b| {
-                b.pawns[self.active_color].move_bit(from_index, to_index);
-                b.clear_square(opponent_color, to_index);
-            }));
+            output.push((
+                BoardMove::new(from_index, to_index),
+                self.apply_move(|b| {
+                    b.pawns[self.active_color].move_bit(from_index, to_index);
+                    b.clear_square(opponent_color, to_index);
+                }),
+            ));
         }
     }
 
-    fn push_pawn_promotions(&self, from_index: u32, to_index: u32, output: &mut Vec<Board>) {
-        output.push(self.apply_move(|b| {
-            b.pawns[self.active_color].set_bit(from_index, false);
-            b.rooks[self.active_color].set_bit(to_index, true);
-        }));
-        output.push(self.apply_move(|b| {
-            b.pawns[self.active_color].set_bit(from_index, false);
-            b.bishops[self.active_color].set_bit(to_index, true);
-        }));
-        output.push(self.apply_move(|b| {
-            b.pawns[self.active_color].set_bit(from_index, false);
-            b.knights[self.active_color].set_bit(to_index, true);
-        }));
-        output.push(self.apply_move(|b| {
-            b.pawns[self.active_color].set_bit(from_index, false);
-            b.queens[self.active_color].set_bit(to_index, true);
-        }));
+    fn push_pawn_promotions(
+        &self,
+        from_index: u32,
+        to_index: u32,
+        output: &mut Vec<(BoardMove, Board)>,
+    ) {
+        output.push((
+            BoardMove::new_promotion(from_index, to_index, Piece::Rook),
+            self.apply_move(|b| {
+                b.pawns[self.active_color].set_bit(from_index, false);
+                b.rooks[self.active_color].set_bit(to_index, true);
+            }),
+        ));
+        output.push((
+            BoardMove::new_promotion(from_index, to_index, Piece::Bishop),
+            self.apply_move(|b| {
+                b.pawns[self.active_color].set_bit(from_index, false);
+                b.bishops[self.active_color].set_bit(to_index, true);
+            }),
+        ));
+        output.push((
+            BoardMove::new_promotion(from_index, to_index, Piece::Knight),
+            self.apply_move(|b| {
+                b.pawns[self.active_color].set_bit(from_index, false);
+                b.knights[self.active_color].set_bit(to_index, true);
+            }),
+        ));
+        output.push((
+            BoardMove::new_promotion(from_index, to_index, Piece::Queen),
+            self.apply_move(|b| {
+                b.pawns[self.active_color].set_bit(from_index, false);
+                b.queens[self.active_color].set_bit(to_index, true);
+            }),
+        ));
     }
 
     fn king_moves_mask(&self, mask: u64) -> u64 {
@@ -1297,7 +1356,7 @@ impl Board {
         (left_mask | right_mask | up_mask | down_mask) & !self_occupancy
     }
 
-    fn push_king_moves(&self, output: &mut Vec<Board>) {
+    fn push_king_moves(&self, output: &mut Vec<(BoardMove, Board)>) {
         if self.king[self.active_color] == 0 {
             return;
         }
@@ -1310,12 +1369,15 @@ impl Board {
         for index in self.king[self.active_color].as_bit_index_iter() {
             let mask = u64::from_bit(index);
             for to_index in self.king_moves_mask(mask).as_bit_index_iter() {
-                output.push(self.apply_move(|b| {
-                    b.king[self.active_color].move_bit(index, to_index);
-                    if opponent_occupancy.bit_at_index(to_index) {
-                        b.clear_square(opponent_color, to_index);
-                    }
-                }));
+                output.push((
+                    BoardMove::new(index, to_index),
+                    self.apply_move(|b| {
+                        b.king[self.active_color].move_bit(index, to_index);
+                        if opponent_occupancy.bit_at_index(to_index) {
+                            b.clear_square(opponent_color, to_index);
+                        }
+                    }),
+                ));
             }
         }
 
@@ -1327,10 +1389,13 @@ impl Board {
                     // We can castle.
                     let king_index = self.active_color.wb(60, 4);
                     let rook_index = self.active_color.wb(63, 7);
-                    output.push(self.apply_move(|b| {
-                        b.king[self.active_color].move_bit(king_index, king_index + 2);
-                        b.rooks[self.active_color].move_bit(rook_index, rook_index - 2);
-                    }));
+                    output.push((
+                        BoardMove::new(king_index, king_index + 2),
+                        self.apply_move(|b| {
+                            b.king[self.active_color].move_bit(king_index, king_index + 2);
+                            b.rooks[self.active_color].move_bit(rook_index, rook_index - 2);
+                        }),
+                    ));
                 }
             }
         }
@@ -1342,10 +1407,13 @@ impl Board {
                     // We can castle.
                     let king_index = self.active_color.wb(60, 4);
                     let rook_index = self.active_color.wb(56, 0);
-                    output.push(self.apply_move(|b| {
-                        b.king[self.active_color].move_bit(king_index, king_index - 2);
-                        b.rooks[self.active_color].move_bit(rook_index, rook_index + 3);
-                    }));
+                    output.push((
+                        BoardMove::new(king_index, king_index - 2),
+                        self.apply_move(|b| {
+                            b.king[self.active_color].move_bit(king_index, king_index - 2);
+                            b.rooks[self.active_color].move_bit(rook_index, rook_index + 3);
+                        }),
+                    ));
                 }
             }
         }
@@ -1601,7 +1669,7 @@ mod tests {
         let mut board = Board::new_setup();
         board.king[COLOR_WHITE] |= 0x0000804200000000;
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 19);
@@ -1612,7 +1680,7 @@ mod tests {
         let mut board = Board::new_setup();
         board.knights[COLOR_WHITE] = 0x0000008000020000;
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_knight_moves(&mut moves);
 
         assert_eq!(moves.len(), 7);
@@ -1623,7 +1691,7 @@ mod tests {
         let mut board = Board::new_setup();
         board.rooks[COLOR_WHITE] = 0x0000008200000000;
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_rooklike_moves(&mut moves);
 
         assert_eq!(moves.len(), 19);
@@ -1634,7 +1702,7 @@ mod tests {
         let mut board = Board::new_setup();
         board.knights[COLOR_BLACK] = 0x0000000000040000;
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_pawn_moves(&mut moves);
 
         assert_eq!(moves.len(), 16);
@@ -1645,7 +1713,7 @@ mod tests {
         let mut board = Board::new_setup();
         board.bishops[COLOR_WHITE] = 0x0000008200000000;
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_bishoplike_moves(&mut moves);
 
         assert_eq!(moves.len(), 10);
@@ -1703,27 +1771,27 @@ mod tests {
 
         let board = board.unwrap();
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<(BoardMove, Board)> = vec![];
         board.push_pawn_moves(&mut moves);
         Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), pawn_moves);
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<(BoardMove, Board)> = vec![];
         board.push_king_moves(&mut moves);
         Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), king_moves);
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<(BoardMove, Board)> = vec![];
         board.push_rooklike_moves(&mut moves);
         Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), rooklike_moves);
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<(BoardMove, Board)> = vec![];
         board.push_bishoplike_moves(&mut moves);
         Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), bishoplike_moves);
 
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<(BoardMove, Board)> = vec![];
         board.push_knight_moves(&mut moves);
         Board::remove_checks(&mut moves);
         assert_eq!(moves.len(), knight_moves);
@@ -1776,7 +1844,7 @@ mod tests {
             "r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
         )
         .unwrap();
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 3);
@@ -1786,7 +1854,7 @@ mod tests {
             "r2qkb1r/ppp2ppp/2np1n2/1B2p1N1/2b1P3/2N3P1/PPPP1P1P/R1BQK2R w KQkq - 1 7",
         )
         .unwrap();
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 2);
@@ -1796,7 +1864,7 @@ mod tests {
             "r1b1kb1r/1ppq1ppp/p1np4/1B2p1B1/4P1n1/2NP1N2/PPPQ1PPP/R3K2R w KQkq - 0 8",
         )
         .unwrap();
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 5);
@@ -1806,7 +1874,7 @@ mod tests {
             "r1b1kb1r/1ppq1ppp/p1Bp4/4p1B1/4P3/2NP1N2/PPPQ1nPP/R3K2R w KQkq - 0 9",
         )
         .unwrap();
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 5);
@@ -1818,7 +1886,7 @@ mod tests {
             "rnbqk2r/pppp1ppp/5n2/1B2p3/1b2P3/P4N2/1PPP1PPP/RNBQK2R b KQkq - 0 4",
         )
         .unwrap();
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 3);
@@ -1828,7 +1896,7 @@ mod tests {
             "rnbqk2r/pppp1ppp/5n2/1B2p3/1b2P3/P4N2/1PPP1PPP/RNBQK2R b KQq - 0 4",
         )
         .unwrap();
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_king_moves(&mut moves);
 
         assert_eq!(moves.len(), 2);
@@ -1838,7 +1906,7 @@ mod tests {
             "r3k2r/p1Pq1ppp/1pn5/4p3/1Pb1P1n1/5N2/1PP2PPP/RNBQK2R b KQkq - 0 10",
         )
         .unwrap();
-        let mut moves: Vec<Board> = vec![];
+        let mut moves: Vec<_> = vec![];
         board.push_king_moves(&mut moves);
 
         // Again, this seems wrong, but we can put the king in check.
