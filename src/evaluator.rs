@@ -184,7 +184,7 @@ impl Evaluator for DefaultEvaluator {
                     + 9 * (captured_mask & b.queens[prev_board.active_color]).count_ones();
 
                 // MVV-LVA
-                return (capturer_value - captured_value) as i32;
+                return (capturer_value as i32) - (captured_value as i32);
             }
             return 100;
         });
