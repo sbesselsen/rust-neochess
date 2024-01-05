@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    board::{Board, COLOR_BLACK, COLOR_WHITE},
+    board::{Board, BoardMove, COLOR_BLACK, COLOR_WHITE},
     evaluator::{DefaultEvaluator, Evaluator, EvaluatorScore},
 };
 
@@ -50,6 +50,7 @@ struct TranspositionTableEntry {
     depth: u32,
     score: EvaluatorScore,
     bound: TranspositionTableBound,
+    best_move: Option<BoardMove>,
 }
 
 pub struct Engine {
@@ -121,8 +122,12 @@ impl Engine {
         let mut alpha = alpha;
         let mut beta = beta;
 
+        let tt_index = (board.zobrist_hash % (self.transposition_table.len() as u64)) as usize;
+        let tt_entry =
+            self.transposition_table[tt_index].filter(|e| e.zobrist_hash == board.zobrist_hash);
+
         if !return_board {
-            if let Some(entry) = self.get_transposition_entry(board) {
+            if let Some(entry) = tt_entry {
                 if entry.depth >= depth {
                     // The score was calculated to at least the depth we need.
                     match entry.bound {
@@ -211,6 +216,7 @@ impl Engine {
             }
         }
 
+        // Add to transposition table.
         let bound = if best_score <= alpha_orig {
             TranspositionTableBound::Upper
         } else if best_score >= beta {
@@ -218,41 +224,27 @@ impl Engine {
         } else {
             TranspositionTableBound::Exact
         };
-        self.add_transposition_entry(board, depth, best_score, bound);
+        let best_move = if let Some(best_board) = &best_board {
+            best_board.as_board_move(board)
+        } else {
+            None
+        };
 
-        (best_board, best_score)
-    }
-
-    fn add_transposition_entry(
-        &mut self,
-        board: &Board,
-        depth: u32,
-        score: EvaluatorScore,
-        bound: TranspositionTableBound,
-    ) {
-        let index = (board.zobrist_hash % (self.transposition_table.len() as u64)) as usize;
-
-        if matches!(
-            self.transposition_table[index],
+        if !matches!(
+            self.transposition_table[tt_index],
             Some(e) if e.depth > depth && e.zobrist_hash == board.zobrist_hash
         ) {
-            // There is already a better entry in the table, computed to a greater depth.
-            return;
+            // There is no entry in the table for this board, or it is worse in depth than what we have.
+            self.transposition_table[tt_index].replace(TranspositionTableEntry {
+                zobrist_hash: board.zobrist_hash,
+                depth,
+                score: best_score,
+                bound,
+                best_move,
+            });
         }
 
-        // Write the new value.
-        self.transposition_table[index].replace(TranspositionTableEntry {
-            zobrist_hash: board.zobrist_hash,
-            depth,
-            score,
-            bound,
-        });
-    }
-
-    fn get_transposition_entry(&self, board: &Board) -> Option<TranspositionTableEntry> {
-        let index = (board.zobrist_hash % (self.transposition_table.len() as u64)) as usize;
-
-        self.transposition_table[index].filter(|e| e.zobrist_hash == board.zobrist_hash)
+        (best_board, best_score)
     }
 
     fn order_boards(&self, prev_board: &Board, boards: &mut Vec<Board>) {
