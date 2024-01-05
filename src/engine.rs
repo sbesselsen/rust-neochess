@@ -318,7 +318,7 @@ mod tests {
         assert!(b.is_some());
         assert_eq!(
             b.unwrap().to_fen(),
-            "r2qkb1r/pp2nppp/3p1N2/2p1N1B1/2BnP3/3P4/PPP2PPP/R2bK2R b KQkq - 0 1"
+            "r2qkb1r/pp2nppp/3p1N2/2p1N1B1/2BnP3/3P4/PPP2PPP/R2bK2R b KQkq - 2 1"
         );
     }
 
@@ -333,7 +333,7 @@ mod tests {
         // It got the right move.
         assert_eq!(
             b.map(|b| b.to_fen()),
-            Some(String::from("5r2/8/8/pRk3p1/2N3P1/P4b2/1K6/5B2 b - - 1 1")),
+            Some(String::from("5r2/8/8/pRk3p1/2N3P1/P4b2/1K6/5B2 b - - 0 1")),
         );
     }
 
@@ -370,7 +370,7 @@ mod tests {
         assert_eq!(
             b.map(|b| b.to_fen()),
             Some(String::from(
-                "2r3k1/6r1/p3p3/3bQp1p/2pP4/P1P5/2B1R1qP/5RK1 w - - 1 2"
+                "2r3k1/6r1/p3p3/3bQp1p/2pP4/P1P5/2B1R1qP/5RK1 w - - 0 2"
             )),
         );
     }

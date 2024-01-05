@@ -837,13 +837,9 @@ impl BitBoard {
                 b.active_color = COLOR_WHITE;
                 b.fullmove_number += 1;
             }
-            if b.pawns[self.active_color] != self.pawns[self.active_color] {
-                // Pawn move.
-                b.halfmove_clock = 0;
-            } else if b.occupancy_bits_for(b.active_color)
-                != self.occupancy_bits_for(b.active_color)
+            if b.pawns[self.active_color] != self.pawns[self.active_color]
+                || b.occupancy_bits_for(b.active_color) != self.occupancy_bits_for(b.active_color)
             {
-                // Capture.
                 b.halfmove_clock = 0;
             } else {
                 b.halfmove_clock += 1;
