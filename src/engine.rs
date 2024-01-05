@@ -94,18 +94,22 @@ impl Default for Engine {
 impl Engine {
     pub fn minmax_cutoff(&mut self, board: &Board, depth: u32) -> (Option<Board>, EvaluatorScore) {
         assert!(depth > 0, "depth should be at least 1");
-        let (b, score) = self.minmax_cutoff_inner(
+        let (mv, score) = self.minmax_cutoff_inner(
             board,
             depth,
-            true,
-            true,
+            false,
             EvaluatorScore::MinusInfinity,
             EvaluatorScore::PlusInfinity,
         );
+        let board_after_move = mv.map(|mv| {
+            board
+                .apply_board_move(&mv)
+                .expect("engine-generated move should be applicable")
+        });
         if board.active_color == COLOR_WHITE {
-            (b, score)
+            (board_after_move, score)
         } else {
-            (b, -score)
+            (board_after_move, -score)
         }
     }
 
@@ -113,11 +117,10 @@ impl Engine {
         &mut self,
         board: &Board,
         depth: u32,
-        return_board: bool,
         allow_null: bool,
         alpha: EvaluatorScore,
         beta: EvaluatorScore,
-    ) -> (Option<Board>, EvaluatorScore) {
+    ) -> (Option<BoardMove>, EvaluatorScore) {
         let alpha_orig = alpha;
         let mut alpha = alpha;
         let mut beta = beta;
@@ -126,29 +129,27 @@ impl Engine {
         let tt_entry =
             self.transposition_table[tt_index].filter(|e| e.zobrist_hash == board.zobrist_hash);
 
-        if !return_board {
-            if let Some(entry) = tt_entry {
-                if entry.depth >= depth {
-                    // The score was calculated to at least the depth we need.
-                    match entry.bound {
-                        TranspositionTableBound::Exact => {
-                            // We know the exact score. We can return it!
-                            return (None, entry.score);
-                        }
-                        TranspositionTableBound::Lower => {
-                            // We know a lower bound for this board.
-                            alpha = alpha.max(entry.score);
-                        }
-                        TranspositionTableBound::Upper => {
-                            // We know an upper bound for this board.
-                            // Update beta so we can terminate deeper nodes if they
-                            // appear to be better than the upper bound.
-                            beta = beta.min(entry.score);
-                        }
-                    }
-                    if alpha >= beta {
+        if let Some(entry) = tt_entry {
+            if entry.depth >= depth {
+                // The score was calculated to at least the depth we need.
+                match entry.bound {
+                    TranspositionTableBound::Exact => {
+                        // We know the exact score. We can return it!
                         return (None, entry.score);
                     }
+                    TranspositionTableBound::Lower => {
+                        // We know a lower bound for this board.
+                        alpha = alpha.max(entry.score);
+                    }
+                    TranspositionTableBound::Upper => {
+                        // We know an upper bound for this board.
+                        // Update beta so we can terminate deeper nodes if they
+                        // appear to be better than the upper bound.
+                        beta = beta.min(entry.score);
+                    }
+                }
+                if alpha >= beta {
+                    return (entry.best_move, entry.score);
                 }
             }
         }
@@ -165,13 +166,11 @@ impl Engine {
 
         // Null move pruning
         let null_move_depth_reduction = 2;
-        if allow_null && !return_board && depth > null_move_depth_reduction + 1 && !board.is_check()
-        {
+        if allow_null && depth > null_move_depth_reduction + 1 && !board.is_check() {
             let null_move_board = board.apply_mutation(|_| {});
             let (_, null_move_score) = self.minmax_cutoff_inner(
                 &null_move_board,
                 depth - null_move_depth_reduction - 1,
-                false,
                 false,
                 -beta,
                 -alpha,
@@ -199,7 +198,7 @@ impl Engine {
         let mut best_score = EvaluatorScore::MinusInfinity;
 
         for b in next_boards {
-            let (_, score) = self.minmax_cutoff_inner(&b, depth - 1, false, true, -beta, -alpha);
+            let (_, score) = self.minmax_cutoff_inner(&b, depth - 1, true, -beta, -alpha);
             let score = -score;
             if score > best_score || best_board.is_none() {
                 best_board = Some(b);
@@ -230,10 +229,10 @@ impl Engine {
             None
         };
 
-        if !matches!(
-            self.transposition_table[tt_index],
-            Some(e) if e.depth > depth && e.zobrist_hash == board.zobrist_hash
-        ) {
+        if self.transposition_table[tt_index]
+            .map(|e| e.zobrist_hash != board.zobrist_hash || e.depth <= depth)
+            .unwrap_or(true)
+        {
             // There is no entry in the table for this board, or it is worse in depth than what we have.
             self.transposition_table[tt_index].replace(TranspositionTableEntry {
                 zobrist_hash: board.zobrist_hash,
@@ -244,7 +243,7 @@ impl Engine {
             });
         }
 
-        (best_board, best_score)
+        (best_move, best_score)
     }
 
     fn order_boards(&self, prev_board: &Board, boards: &mut Vec<Board>) {
