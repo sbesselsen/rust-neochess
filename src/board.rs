@@ -52,12 +52,26 @@ pub enum Piece {
 impl Display for Piece {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Piece::Pawn => f.write_str("p"),
+            Piece::Pawn => f.write_str("P"),
             Piece::Rook => f.write_str("R"),
             Piece::Knight => f.write_str("N"),
             Piece::Bishop => f.write_str("B"),
             Piece::Queen => f.write_str("Q"),
             Piece::King => f.write_str("K"),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Color {
+    White = 0,
+    Black = 1,
+}
+impl Display for Color {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Color::White => f.write_str("w"),
+            Color::Black => f.write_str("b"),
         }
     }
 }
@@ -545,11 +559,37 @@ impl Board {
         output
     }
 
-    pub fn move_as_string(&self, after_move: &Board) -> Option<String> {
-        let opponent_color = self.active_color.opponent();
-        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
+    pub fn piece_at_index(&self, index: u32) -> Option<(Piece, Color)> {
+        for color in [Color::White, Color::Black] {
+            if self.pawns[color as usize].bit_at_index(index) {
+                return Some((Piece::Pawn, color));
+            }
+            if self.rooks[color as usize].bit_at_index(index) {
+                return Some((Piece::Rook, color));
+            }
+            if self.knights[color as usize].bit_at_index(index) {
+                return Some((Piece::Knight, color));
+            }
+            if self.bishops[color as usize].bit_at_index(index) {
+                return Some((Piece::Bishop, color));
+            }
+            if self.queens[color as usize].bit_at_index(index) {
+                return Some((Piece::Queen, color));
+            }
+            if self.king[color as usize].bit_at_index(index) {
+                return Some((Piece::King, color));
+            }
+        }
+        None
+    }
 
-        let moved_pawns = self.pawns[self.active_color] & !after_move.pawns[self.active_color];
+    pub fn move_as_string(&self, after_move: &Board) -> Option<String> {
+        let BoardMove {
+            from_index,
+            to_index,
+            promote_to,
+        } = self.as_board_move(after_move)?;
+
         let check_suffix = if after_move.is_check() {
             if after_move.is_checkmate() {
                 "#"
@@ -559,13 +599,269 @@ impl Board {
         } else {
             ""
         };
+
+        let (piece, _) = self.piece_at_index(from_index).expect(
+            "piece should exist at from_index if board move was computed by .as_board_move()",
+        );
+        let target = self.piece_at_index(to_index);
+        let capture_mark = if target.is_some() { "x" } else { "" };
+
+        match piece {
+            Piece::Pawn => {
+                let (_, from_file) = Self::rank_file_from_index(from_index);
+                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+                let mut promotion = String::with_capacity(2);
+
+                if let Some(promote_to_piece) = promote_to {
+                    // Promotion!
+                    promotion.push('=');
+                    promotion.push_str(&format!("{}", promote_to_piece));
+                }
+                if to_file != from_file {
+                    // Pawn capture.
+                    return Some(format!(
+                        "{}x{}{to_rank}{promotion}{check_suffix}",
+                        Self::file_to_char(from_file),
+                        Self::file_to_char(to_file),
+                    ));
+                }
+
+                Some(format!(
+                    "{}{to_rank}{promotion}{check_suffix}",
+                    Self::file_to_char(to_file),
+                ))
+            }
+            Piece::Rook => {
+                let to_mask = u64::from_bit(to_index);
+
+                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+                // Create a board which is like the board after the move, only our moved piece is still in
+                // the original spot. That will allow us to calculate sightlines properly.
+                let mut sightlines_board = after_move.clone();
+                sightlines_board.rooks[self.active_color] |= self.rooks[self.active_color];
+
+                let other_rooks = sightlines_board
+                    .rooklike_moves_masks(to_mask)
+                    .map(|(_, m)| m)
+                    .reduce(|a, b| a | b)
+                    .unwrap_or(0)
+                    & after_move.rooks[self.active_color];
+
+                if other_rooks > 0 {
+                    // Two rooks could have moved here; we need to differentiate between them.
+                    let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                    let moved_rook =
+                        self.rooks[self.active_color] & !after_move.rooks[self.active_color];
+                    let rooks_on_same_file = ((other_rooks | moved_rook)
+                        & (FILE_0_MASK >> (from_file - 1)))
+                        .count_ones()
+                        > 1;
+
+                    if rooks_on_same_file {
+                        return Some(format!(
+                            "R{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
+                            Self::file_to_char(from_file),
+                            Self::file_to_char(to_file),
+                        ));
+                    } else {
+                        return Some(format!(
+                            "R{}{capture_mark}{}{to_rank}{check_suffix}",
+                            Self::file_to_char(from_file),
+                            Self::file_to_char(to_file),
+                        ));
+                    }
+                }
+
+                Some(format!(
+                    "R{capture_mark}{}{to_rank}{check_suffix}",
+                    Self::file_to_char(to_file),
+                ))
+            }
+            Piece::Knight => {
+                let to_mask = u64::from_bit(to_index);
+
+                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+                let other_knights = after_move
+                    .knight_moves_masks(to_mask)
+                    .map(|(_, m)| m)
+                    .reduce(|a, b| a | b)
+                    .unwrap_or(0)
+                    & after_move.knights[self.active_color];
+
+                if other_knights > 0 {
+                    // Two knights could have moved here; we need to differentiate between them.
+                    let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                    let moved_knight =
+                        self.knights[self.active_color] & !after_move.knights[self.active_color];
+
+                    let knights_on_same_file = ((other_knights | moved_knight)
+                        & (FILE_0_MASK >> (from_file - 1)))
+                        .count_ones()
+                        > 1;
+
+                    if knights_on_same_file {
+                        return Some(format!(
+                            "N{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
+                            Self::file_to_char(from_file),
+                            Self::file_to_char(to_file),
+                        ));
+                    } else {
+                        return Some(format!(
+                            "N{}{capture_mark}{}{to_rank}{check_suffix}",
+                            Self::file_to_char(from_file),
+                            Self::file_to_char(to_file),
+                        ));
+                    }
+                }
+
+                Some(format!(
+                    "N{capture_mark}{}{to_rank}{check_suffix}",
+                    Self::file_to_char(to_file),
+                ))
+            }
+            Piece::Bishop => {
+                let to_mask = u64::from_bit(to_index);
+
+                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+                // Create a board which is like the board after the move, only our moved piece is still in
+                // the original spot. That will allow us to calculate sightlines properly.
+                let mut sightlines_board = after_move.clone();
+                sightlines_board.bishops[self.active_color] |= self.bishops[self.active_color];
+
+                let other_bishops = sightlines_board
+                    .bishoplike_moves_masks(to_mask)
+                    .map(|(_, m)| m)
+                    .reduce(|a, b| a | b)
+                    .unwrap_or(0)
+                    & after_move.bishops[self.active_color];
+
+                if other_bishops > 0 {
+                    // Two bishops could have moved here; we need to differentiate between them.
+                    let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                    let moved_bishop =
+                        self.bishops[self.active_color] & !after_move.bishops[self.active_color];
+
+                    let bishops_on_same_file = ((other_bishops | moved_bishop)
+                        & (FILE_0_MASK >> (from_file - 1)))
+                        .count_ones()
+                        > 1;
+
+                    if bishops_on_same_file {
+                        return Some(format!(
+                            "B{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
+                            Self::file_to_char(from_file),
+                            Self::file_to_char(to_file),
+                        ));
+                    } else {
+                        return Some(format!(
+                            "B{}{capture_mark}{}{to_rank}{check_suffix}",
+                            Self::file_to_char(from_file),
+                            Self::file_to_char(to_file),
+                        ));
+                    }
+                }
+
+                Some(format!(
+                    "B{capture_mark}{}{to_rank}{check_suffix}",
+                    Self::file_to_char(to_file),
+                ))
+            }
+            Piece::Queen => {
+                let to_mask = u64::from_bit(to_index);
+
+                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+
+                // Create a board which is like the board after the move, only our moved piece is still in
+                // the original spot. That will allow us to calculate sightlines properly.
+                let mut sightlines_board = after_move.clone();
+                sightlines_board.queens[self.active_color] |= self.queens[self.active_color];
+
+                let other_queens = (sightlines_board
+                    .rooklike_moves_masks(to_mask)
+                    .map(|(_, m)| m)
+                    .reduce(|a, b| a | b)
+                    .unwrap_or(0)
+                    | sightlines_board
+                        .bishoplike_moves_masks(to_mask)
+                        .map(|(_, m)| m)
+                        .reduce(|a, b| a | b)
+                        .unwrap_or(0))
+                    & after_move.queens[self.active_color];
+
+                if other_queens > 0 {
+                    // Two queens could have moved here; we need to differentiate between them.
+                    let (from_rank, from_file) = Self::rank_file_from_index(from_index);
+
+                    let moved_queen =
+                        self.queens[self.active_color] & !after_move.queens[self.active_color];
+
+                    let queens_on_same_file = ((other_queens | moved_queen)
+                        & (FILE_0_MASK >> (from_file - 1)))
+                        .count_ones()
+                        > 1;
+
+                    if queens_on_same_file {
+                        return Some(format!(
+                            "Q{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
+                            Self::file_to_char(from_file),
+                            Self::file_to_char(to_file),
+                        ));
+                    } else {
+                        return Some(format!(
+                            "Q{}{capture_mark}{}{to_rank}{check_suffix}",
+                            Self::file_to_char(from_file),
+                            Self::file_to_char(to_file),
+                        ));
+                    }
+                }
+
+                Some(format!(
+                    "Q{capture_mark}{}{to_rank}{check_suffix}",
+                    Self::file_to_char(to_file),
+                ))
+            }
+            Piece::King => {
+                let moved_king = self.king[self.active_color] & !after_move.king[self.active_color];
+
+                let home_rank_offset = self.active_color.wb(56, 0);
+                if self.can_castle[self.active_color][SIDE_KING]
+                    && moved_king.bit_at_index(home_rank_offset + 4)
+                    && after_move.king[self.active_color].bit_at_index(home_rank_offset + 6)
+                {
+                    // Castling kingside.
+                    return Some(String::from("O-O"));
+                }
+                if self.can_castle[self.active_color][SIDE_QUEEN]
+                    && moved_king.bit_at_index(home_rank_offset + 4)
+                    && after_move.king[self.active_color].bit_at_index(home_rank_offset + 2)
+                {
+                    // Castling queenside.
+                    return Some(String::from("O-O-O"));
+                }
+
+                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
+                Some(format!(
+                    "K{capture_mark}{}{to_rank}{check_suffix}",
+                    Self::file_to_char(to_file)
+                ))
+            }
+        }
+    }
+
+    pub fn as_board_move(&self, after_move: &Board) -> Option<BoardMove> {
+        let moved_pawns = self.pawns[self.active_color] & !after_move.pawns[self.active_color];
         if moved_pawns > 0 {
             let from_index = moved_pawns.leading_zeros();
             let mut to_index = (after_move.pawns[self.active_color]
                 & !self.pawns[self.active_color])
                 .leading_zeros();
-
-            let mut promotion = String::with_capacity(2);
 
             if to_index == 64 {
                 // Pawn promotion.
@@ -587,292 +883,69 @@ impl Board {
 
                 if new_queen_index < 64 {
                     to_index = new_queen_index;
-                    promotion.push_str("=Q");
+                    return Some(BoardMove::new_promotion(from_index, to_index, Piece::Queen));
                 } else if new_rook_index < 64 {
                     to_index = new_rook_index;
-                    promotion.push_str("=R");
+                    return Some(BoardMove::new_promotion(from_index, to_index, Piece::Rook));
                 } else if new_knight_index < 64 {
                     to_index = new_knight_index;
-                    promotion.push_str("=N");
+                    return Some(BoardMove::new_promotion(
+                        from_index,
+                        to_index,
+                        Piece::Knight,
+                    ));
                 } else if new_bishop_index < 64 {
                     to_index = new_bishop_index;
-                    promotion.push_str("=B");
+                    return Some(BoardMove::new_promotion(
+                        from_index,
+                        to_index,
+                        Piece::Bishop,
+                    ));
                 }
             }
-
-            let (_, from_file) = Self::rank_file_from_index(from_index);
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            if to_file == from_file {
-                // Pawn move.
-                return Some(format!(
-                    "{}{to_rank}{promotion}{check_suffix}",
-                    Self::file_to_char(to_file),
-                ));
-            } else {
-                // Pawn capture.
-                return Some(format!(
-                    "{}x{}{to_rank}{promotion}{check_suffix}",
-                    Self::file_to_char(from_file),
-                    Self::file_to_char(to_file),
-                ));
-            }
+            return Some(BoardMove::new(from_index, to_index));
         };
 
         let moved_king = self.king[self.active_color] & !after_move.king[self.active_color];
         if moved_king > 0 {
-            let home_rank_offset = self.active_color.wb(56, 0);
-            if self.can_castle[self.active_color][SIDE_KING]
-                && moved_king.bit_at_index(home_rank_offset + 4)
-                && after_move.king[self.active_color].bit_at_index(home_rank_offset + 6)
-            {
-                // Castling kingside.
-                return Some(String::from("O-O"));
-            }
-            if self.can_castle[self.active_color][SIDE_QUEEN]
-                && moved_king.bit_at_index(home_rank_offset + 4)
-                && after_move.king[self.active_color].bit_at_index(home_rank_offset + 2)
-            {
-                // Castling queenside.
-                return Some(String::from("O-O-O"));
-            }
-            let to_index = after_move.king[self.active_color].leading_zeros();
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-            if to_index < 64 {
-                let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-                return Some(format!(
-                    "K{capture_mark}{}{to_rank}{check_suffix}",
-                    Self::file_to_char(to_file)
-                ));
-            }
+            let from_index = moved_king.leading_zeros();
+            let to_index = (after_move.king[self.active_color] & !self.king[self.active_color])
+                .leading_zeros();
+            return Some(BoardMove::new(from_index, to_index));
         }
 
         let moved_rook = self.rooks[self.active_color] & !after_move.rooks[self.active_color];
         if moved_rook > 0 {
+            let from_index = moved_rook.leading_zeros();
             let to_index = (after_move.rooks[self.active_color] & !self.rooks[self.active_color])
                 .leading_zeros();
-            let to_mask = u64::from_bit(to_index);
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            // Create a board which is like the board after the move, only our moved piece is still in
-            // the original spot. That will allow us to calculate sightlines properly.
-            let mut sightlines_board = after_move.clone();
-            sightlines_board.rooks[self.active_color] |= self.rooks[self.active_color];
-
-            let other_rooks = sightlines_board
-                .rooklike_moves_masks(to_mask)
-                .map(|(_, m)| m)
-                .reduce(|a, b| a | b)
-                .unwrap_or(0)
-                & after_move.rooks[self.active_color];
-
-            if other_rooks > 0 {
-                // Two rooks could have moved here; we need to differentiate between them.
-                let from_index = moved_rook.leading_zeros();
-                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
-
-                let rooks_on_same_file =
-                    ((other_rooks | moved_rook) & (FILE_0_MASK >> (from_file - 1))).count_ones()
-                        > 1;
-
-                if rooks_on_same_file {
-                    return Some(format!(
-                        "R{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                } else {
-                    return Some(format!(
-                        "R{}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                }
-            }
-
-            return Some(format!(
-                "R{capture_mark}{}{to_rank}{check_suffix}",
-                Self::file_to_char(to_file),
-            ));
+            return Some(BoardMove::new(from_index, to_index));
         }
 
         let moved_knight = self.knights[self.active_color] & !after_move.knights[self.active_color];
         if moved_knight > 0 {
+            let from_index = moved_knight.leading_zeros();
             let to_index = (after_move.knights[self.active_color]
                 & !self.knights[self.active_color])
                 .leading_zeros();
-            let to_mask = u64::from_bit(to_index);
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            let other_knights = after_move
-                .knight_moves_masks(to_mask)
-                .map(|(_, m)| m)
-                .reduce(|a, b| a | b)
-                .unwrap_or(0)
-                & after_move.knights[self.active_color];
-
-            if other_knights > 0 {
-                // Two knights could have moved here; we need to differentiate between them.
-                let from_index = moved_knight.leading_zeros();
-                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
-
-                let knights_on_same_file = ((other_knights | moved_knight)
-                    & (FILE_0_MASK >> (from_file - 1)))
-                    .count_ones()
-                    > 1;
-
-                if knights_on_same_file {
-                    return Some(format!(
-                        "N{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                } else {
-                    return Some(format!(
-                        "N{}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                }
-            }
-
-            return Some(format!(
-                "N{capture_mark}{}{to_rank}{check_suffix}",
-                Self::file_to_char(to_file),
-            ));
+            return Some(BoardMove::new(from_index, to_index));
         }
 
         let moved_bishop = self.bishops[self.active_color] & !after_move.bishops[self.active_color];
         if moved_bishop > 0 {
+            let from_index = moved_bishop.leading_zeros();
             let to_index = (after_move.bishops[self.active_color]
                 & !self.bishops[self.active_color])
                 .leading_zeros();
-            let to_mask = u64::from_bit(to_index);
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            // Create a board which is like the board after the move, only our moved piece is still in
-            // the original spot. That will allow us to calculate sightlines properly.
-            let mut sightlines_board = after_move.clone();
-            sightlines_board.bishops[self.active_color] |= self.bishops[self.active_color];
-
-            let other_bishops = sightlines_board
-                .bishoplike_moves_masks(to_mask)
-                .map(|(_, m)| m)
-                .reduce(|a, b| a | b)
-                .unwrap_or(0)
-                & after_move.bishops[self.active_color];
-
-            if other_bishops > 0 {
-                // Two bishops could have moved here; we need to differentiate between them.
-                let from_index = moved_bishop.leading_zeros();
-                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
-
-                let bishops_on_same_file = ((other_bishops | moved_bishop)
-                    & (FILE_0_MASK >> (from_file - 1)))
-                    .count_ones()
-                    > 1;
-
-                if bishops_on_same_file {
-                    return Some(format!(
-                        "B{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                } else {
-                    return Some(format!(
-                        "B{}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                }
-            }
-
-            return Some(format!(
-                "B{capture_mark}{}{to_rank}{check_suffix}",
-                Self::file_to_char(to_file),
-            ));
+            return Some(BoardMove::new(from_index, to_index));
         }
 
         let moved_queen = self.queens[self.active_color] & !after_move.queens[self.active_color];
         if moved_queen > 0 {
+            let from_index = moved_queen.leading_zeros();
             let to_index = (after_move.queens[self.active_color] & !self.queens[self.active_color])
                 .leading_zeros();
-            let to_mask = u64::from_bit(to_index);
-            let capture_mark = if opponent_occupancy.bit_at_index(to_index) {
-                "x"
-            } else {
-                ""
-            };
-
-            let (to_rank, to_file) = Self::rank_file_from_index(to_index);
-
-            // Create a board which is like the board after the move, only our moved piece is still in
-            // the original spot. That will allow us to calculate sightlines properly.
-            let mut sightlines_board = after_move.clone();
-            sightlines_board.queens[self.active_color] |= self.queens[self.active_color];
-
-            let other_queens = (sightlines_board
-                .rooklike_moves_masks(to_mask)
-                .map(|(_, m)| m)
-                .reduce(|a, b| a | b)
-                .unwrap_or(0)
-                | sightlines_board
-                    .bishoplike_moves_masks(to_mask)
-                    .map(|(_, m)| m)
-                    .reduce(|a, b| a | b)
-                    .unwrap_or(0))
-                & after_move.queens[self.active_color];
-
-            if other_queens > 0 {
-                // Two queens could have moved here; we need to differentiate between them.
-                let from_index = moved_queen.leading_zeros();
-                let (from_rank, from_file) = Self::rank_file_from_index(from_index);
-
-                let queens_on_same_file =
-                    ((other_queens | moved_queen) & (FILE_0_MASK >> (from_file - 1))).count_ones()
-                        > 1;
-
-                if queens_on_same_file {
-                    return Some(format!(
-                        "Q{}{from_rank}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                } else {
-                    return Some(format!(
-                        "Q{}{capture_mark}{}{to_rank}{check_suffix}",
-                        Self::file_to_char(from_file),
-                        Self::file_to_char(to_file),
-                    ));
-                }
-            }
-
-            return Some(format!(
-                "Q{capture_mark}{}{to_rank}{check_suffix}",
-                Self::file_to_char(to_file),
-            ));
+            return Some(BoardMove::new(from_index, to_index));
         }
 
         None
