@@ -39,6 +39,69 @@ pub struct Board {
     pub zobrist_hash: u64,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Piece {
+    Pawn,
+    Rook,
+    Knight,
+    Bishop,
+    Queen,
+    King,
+}
+
+impl Display for Piece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Piece::Pawn => f.write_str("p"),
+            Piece::Rook => f.write_str("R"),
+            Piece::Knight => f.write_str("N"),
+            Piece::Bishop => f.write_str("B"),
+            Piece::Queen => f.write_str("Q"),
+            Piece::King => f.write_str("K"),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BoardMove {
+    pub from_index: u32,
+    pub to_index: u32,
+    pub promote_to: Option<Piece>,
+}
+
+impl BoardMove {
+    pub fn new(from_index: u32, to_index: u32) -> BoardMove {
+        BoardMove {
+            from_index,
+            to_index,
+            promote_to: None,
+        }
+    }
+
+    pub fn new_promotion(from_index: u32, to_index: u32, promote_to: Piece) -> BoardMove {
+        BoardMove {
+            from_index,
+            to_index,
+            promote_to: Some(promote_to),
+        }
+    }
+}
+
+impl Display for BoardMove {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::with_capacity(5);
+        output.push_str(&Board::coords_to_string(self.from_index));
+        output.push('-');
+        output.push_str(&Board::coords_to_string(self.to_index));
+        f.write_str(&output)?;
+        if let Some(piece) = self.promote_to {
+            f.write_str("=")?;
+            Display::fmt(&piece, f)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct FenParseError {
     message: String,
@@ -1505,7 +1568,9 @@ impl Display for Board {
 mod tests {
     use crate::{
         bitwise_helper::BitwiseHelper,
-        board::{Board, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING, SIDE_QUEEN},
+        board::{
+            Board, BoardMove, Piece, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK, SIDE_KING, SIDE_QUEEN,
+        },
     };
 
     #[test]
@@ -2184,5 +2249,17 @@ mod tests {
         });
 
         assert_eq!(b.halfmove_clock, 0);
+    }
+
+    #[test]
+    fn board_move_notation() {
+        let mv = BoardMove::new(0, 8);
+        assert_eq!(format!("{}", mv), "a8-a7");
+
+        let mv = BoardMove::new_promotion(8, 1, Piece::Queen);
+        assert_eq!(format!("{}", mv), "a7-b8=Q");
+
+        let mv = BoardMove::new_promotion(55, 63, Piece::Rook);
+        assert_eq!(format!("{}", mv), "h2-h1=R");
     }
 }
