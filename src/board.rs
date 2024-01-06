@@ -2288,7 +2288,7 @@ mod tests {
 
         let board = Board::new_setup();
         let hash1 = board.zobrist_hash;
-        assert_ne!(board.zobrist_hash, 0);
+        assert_eq!(board.zobrist_hash, 0x463b96181691fc9c_u64);
 
         let board = Board::new_setup();
         assert_eq!(board.zobrist_hash, hash1);
