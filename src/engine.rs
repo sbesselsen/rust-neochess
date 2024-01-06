@@ -198,8 +198,7 @@ impl Engine {
 
         // Order moves: best move from transposition table goes first, then order heuristically.
         let tt_best_board = tt_entry
-            .map(|e| e.best_move.map(|mv| board.apply_board_move(&mv).ok()))
-            .flatten()
+            .and_then(|e| e.best_move.map(|mv| board.apply_board_move(&mv).ok()))
             .flatten();
         next_boards.sort_by_cached_key(|b| {
             if let Some(tt_best_board) = &tt_best_board {
