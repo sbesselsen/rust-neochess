@@ -1665,10 +1665,8 @@ impl Board {
     }
 
     fn coords_to_string(index: u32) -> String {
-        let file_number = index % 8 + 1;
-        let rank_number = 8 - (index / 8);
-        debug_assert!(rank_number <= 8, "invalid rank_number");
-        Self::file_to_char(file_number).to_string() + &rank_number.to_string()
+        let (rank, file) = Self::rank_file_from_index(index);
+        Self::file_to_char(file).to_string() + &rank.to_string()
     }
 
     fn try_parse_coords(coords: &str) -> Result<(u32, u32), ()> {
@@ -1810,6 +1808,13 @@ mod tests {
         let normal_board = Board::new_setup();
         assert_eq!(normal_board.active_color, COLOR_WHITE);
         assert_eq!(normal_board.next_boards().len(), 20);
+    }
+
+    #[test]
+    fn rank_file() {
+        assert_eq!((8, 1), Board::rank_file_from_index(0));
+        assert_eq!((8, 2), Board::rank_file_from_index(1));
+        assert_eq!((1, 8), Board::rank_file_from_index(63));
     }
 
     #[test]
