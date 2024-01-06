@@ -1,10 +1,12 @@
-use crate::bitwise_helper::BitwiseHelper;
+use crate::{
+    bitwise_helper::BitwiseHelper,
+    zobrist::{
+        zobrist_castling, zobrist_color, zobrist_color_swap, zobrist_en_passant, zobrist_piece,
+    },
+};
 use std::{
     fmt::{Debug, Display},
     hash::Hash,
-};
-use zobrist_constants::{
-    ZOBRIST_BLACK_TO_MOVE, ZOBRIST_CASTLING, ZOBRIST_EN_PASSANT, ZOBRIST_PIECES,
 };
 
 pub const COLOR_WHITE: usize = 0;
@@ -17,10 +19,6 @@ pub const RANK_0_MASK: u64 = 0x00000000000000FF;
 pub const FILE_0_MASK: u64 = 0x8080808080808080;
 pub const DIAG_TL_MASK: u64 = 0x8040201008040201;
 pub const DIAG_TR_MASK: u64 = 0x0102040810204080;
-
-mod zobrist_constants {
-    include!(concat!(env!("OUT_DIR"), "/zobrist_constants.rs"));
-}
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Board {
@@ -72,6 +70,20 @@ impl Display for Color {
         match self {
             Color::White => f.write_str("w"),
             Color::Black => f.write_str("b"),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CastlingSide {
+    Queen = 0,
+    King = 1,
+}
+impl Display for CastlingSide {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CastlingSide::Queen => f.write_str("queenside"),
+            CastlingSide::King => f.write_str("kingside"),
         }
     }
 }
@@ -228,113 +240,94 @@ impl Board {
 
     fn compute_hash(&mut self) {
         self.zobrist_hash = 0;
-        for color in &[COLOR_WHITE, COLOR_BLACK] {
-            for index in self.pawns[*color].as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][0][*color];
+        for color in [Color::White, Color::Black] {
+            for index in self.pawns[color as usize].as_bit_index_iter() {
+                self.zobrist_hash ^= zobrist_piece(Piece::Pawn, color, index as usize);
             }
-            for index in self.rooks[*color].as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][1][*color];
+            for index in self.rooks[color as usize].as_bit_index_iter() {
+                self.zobrist_hash ^= zobrist_piece(Piece::Rook, color, index as usize);
             }
-            for index in self.knights[*color].as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][2][*color];
+            for index in self.knights[color as usize].as_bit_index_iter() {
+                self.zobrist_hash ^= zobrist_piece(Piece::Knight, color, index as usize);
             }
-            for index in self.bishops[*color].as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][3][*color];
+            for index in self.bishops[color as usize].as_bit_index_iter() {
+                self.zobrist_hash ^= zobrist_piece(Piece::Bishop, color, index as usize);
             }
-            for index in self.queens[*color].as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][4][*color];
+            for index in self.queens[color as usize].as_bit_index_iter() {
+                self.zobrist_hash ^= zobrist_piece(Piece::Queen, color, index as usize);
             }
-            for index in self.king[*color].as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][5][*color];
+            for index in self.king[color as usize].as_bit_index_iter() {
+                self.zobrist_hash ^= zobrist_piece(Piece::King, color, index as usize);
+            }
+            for side in [CastlingSide::King, CastlingSide::Queen] {
+                if self.can_castle[color as usize][side as usize] {
+                    self.zobrist_hash ^= zobrist_castling(side, color);
+                }
             }
         }
-        if self.active_color == COLOR_BLACK {
-            self.zobrist_hash ^= ZOBRIST_BLACK_TO_MOVE;
-        }
+        self.zobrist_hash ^= zobrist_color(self.active_color.wb(Color::White, Color::Black));
         if let Some(en_passant_index) = self.en_passant_square {
-            self.zobrist_hash ^= ZOBRIST_EN_PASSANT[en_passant_index as usize];
-        }
-        if !self.can_castle[COLOR_WHITE][SIDE_KING] {
-            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_WHITE][SIDE_KING];
-        }
-        if !self.can_castle[COLOR_WHITE][SIDE_QUEEN] {
-            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_WHITE][SIDE_QUEEN];
-        }
-        if !self.can_castle[COLOR_BLACK][SIDE_KING] {
-            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_BLACK][SIDE_KING];
-        }
-        if !self.can_castle[COLOR_BLACK][SIDE_QUEEN] {
-            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_BLACK][SIDE_QUEEN];
+            self.zobrist_hash ^= zobrist_en_passant(en_passant_index as usize);
         }
     }
 
     fn update_hash(&mut self, prev_board: &Board) {
         if prev_board.active_color != self.active_color {
-            self.zobrist_hash ^= ZOBRIST_BLACK_TO_MOVE;
+            self.zobrist_hash ^= zobrist_color_swap();
         }
 
-        let move_color = prev_board.active_color;
-        let pawns_mutation = prev_board.pawns[move_color] ^ self.pawns[move_color];
+        let move_color = prev_board.active_color.wb(Color::White, Color::Black);
+        let move_color_idx = move_color as usize;
+        let pawns_mutation = prev_board.pawns[move_color_idx] ^ self.pawns[move_color_idx];
         if pawns_mutation > 0 {
             for index in pawns_mutation.as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][0][move_color];
+                self.zobrist_hash ^= zobrist_piece(Piece::Pawn, move_color, index as usize);
             }
         }
-        let rooks_mutation = prev_board.rooks[move_color] ^ self.rooks[move_color];
+        let rooks_mutation = prev_board.rooks[move_color_idx] ^ self.rooks[move_color_idx];
         if rooks_mutation > 0 {
             for index in rooks_mutation.as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][1][move_color];
+                self.zobrist_hash ^= zobrist_piece(Piece::Rook, move_color, index as usize);
             }
         }
-        let knights_mutation = prev_board.knights[move_color] ^ self.knights[move_color];
+        let knights_mutation = prev_board.knights[move_color_idx] ^ self.knights[move_color_idx];
         if knights_mutation > 0 {
             for index in knights_mutation.as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][2][move_color];
+                self.zobrist_hash ^= zobrist_piece(Piece::Knight, move_color, index as usize);
             }
         }
-        let bishops_mutation = prev_board.bishops[move_color] ^ self.bishops[move_color];
+        let bishops_mutation = prev_board.bishops[move_color_idx] ^ self.bishops[move_color_idx];
         if bishops_mutation > 0 {
             for index in bishops_mutation.as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][3][move_color];
+                self.zobrist_hash ^= zobrist_piece(Piece::Bishop, move_color, index as usize);
             }
         }
-        let queens_mutation = prev_board.queens[move_color] ^ self.queens[move_color];
+        let queens_mutation = prev_board.queens[move_color_idx] ^ self.queens[move_color_idx];
         if queens_mutation > 0 {
             for index in queens_mutation.as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][4][move_color];
+                self.zobrist_hash ^= zobrist_piece(Piece::Queen, move_color, index as usize);
             }
         }
-        let king_mutation = prev_board.king[move_color] ^ self.king[move_color];
+        let king_mutation = prev_board.king[move_color_idx] ^ self.king[move_color_idx];
         if king_mutation > 0 {
             for index in king_mutation.as_bit_index_iter() {
-                self.zobrist_hash ^= ZOBRIST_PIECES[index as usize][5][move_color];
+                self.zobrist_hash ^= zobrist_piece(Piece::King, move_color, index as usize);
             }
         }
 
         if let Some(en_passant_index) = prev_board.en_passant_square {
-            self.zobrist_hash ^= ZOBRIST_EN_PASSANT[en_passant_index as usize];
+            self.zobrist_hash ^= zobrist_en_passant(en_passant_index as usize);
         }
         if let Some(en_passant_index) = self.en_passant_square {
-            self.zobrist_hash ^= ZOBRIST_EN_PASSANT[en_passant_index as usize];
+            self.zobrist_hash ^= zobrist_en_passant(en_passant_index as usize);
         }
 
-        if !self.can_castle[COLOR_WHITE][SIDE_KING] && prev_board.can_castle[COLOR_WHITE][SIDE_KING]
-        {
-            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_WHITE][SIDE_KING];
-        }
-        if !self.can_castle[COLOR_WHITE][SIDE_QUEEN]
-            && prev_board.can_castle[COLOR_WHITE][SIDE_QUEEN]
-        {
-            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_WHITE][SIDE_QUEEN];
-        }
-        if !self.can_castle[COLOR_BLACK][SIDE_KING] && prev_board.can_castle[COLOR_BLACK][SIDE_KING]
-        {
-            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_BLACK][SIDE_KING];
-        }
-        if !self.can_castle[COLOR_BLACK][SIDE_QUEEN]
-            && prev_board.can_castle[COLOR_BLACK][SIDE_QUEEN]
-        {
-            self.zobrist_hash ^= ZOBRIST_CASTLING[COLOR_BLACK][SIDE_QUEEN];
+        for side in [CastlingSide::King, CastlingSide::Queen] {
+            if self.can_castle[move_color as usize][side as usize]
+                != prev_board.can_castle[move_color as usize][side as usize]
+            {
+                self.zobrist_hash ^= zobrist_castling(side, move_color);
+            }
         }
     }
 
