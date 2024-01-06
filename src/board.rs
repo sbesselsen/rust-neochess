@@ -2288,10 +2288,47 @@ mod tests {
 
         let board = Board::new_setup();
         let hash1 = board.zobrist_hash;
-        assert_eq!(board.zobrist_hash, 0x463b96181691fc9c_u64);
+        assert_ne!(board.zobrist_hash, 0);
 
         let board = Board::new_setup();
         assert_eq!(board.zobrist_hash, hash1);
+    }
+
+    #[test]
+    fn zobrist_hash_polyglot() {
+        // Tests taken from https://github.com/niklasf/python-chess/blob/master/test.py
+        let board = Board::new_setup();
+        assert_eq!(board.zobrist_hash, 0x463b96181691fc9c);
+
+        let board =
+            Board::try_parse_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
+                .unwrap();
+        assert_eq!(board.zobrist_hash, 0x823c9b50fd114196);
+
+        let board =
+            Board::try_parse_fen("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2")
+                .unwrap();
+        assert_eq!(board.zobrist_hash, 0x0756b94461c50fb0);
+
+        let board =
+            Board::try_parse_fen("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2")
+                .unwrap();
+        assert_eq!(board.zobrist_hash, 0x662fafb965db29d4);
+
+        let board =
+            Board::try_parse_fen("rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3")
+                .unwrap();
+        assert_eq!(board.zobrist_hash, 0x22a48b5a8e47ff78);
+
+        let board =
+            Board::try_parse_fen("rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPPKPPP/RNBQ1BNR b kq - 1 3")
+                .unwrap();
+        assert_eq!(board.zobrist_hash, 0x652a607ca3f242c1);
+
+        let board =
+            Board::try_parse_fen("rnbq1bnr/ppp1pkpp/8/3pPp2/8/8/PPPPKPPP/RNBQ1BNR w - - 2 4")
+                .unwrap();
+        assert_eq!(board.zobrist_hash, 0x00fdd303c946bdd9);
     }
 
     #[test]
