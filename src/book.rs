@@ -169,24 +169,26 @@ mod tests {
 
     use super::{EmptyOpeningBook, OpeningBook, PolyglotOpeningBook};
 
-    fn get_polygot_book() -> PolyglotOpeningBook {
-        // TODO: include a small opening book for testing?
-        let book_file = env::var("OPENING_BOOK").expect("need OPENING_BOOK variable");
-        let book = PolyglotOpeningBook::read(book_file);
+    fn get_polygot_book(opening_book_path: &str) -> PolyglotOpeningBook {
+        let book = PolyglotOpeningBook::read(opening_book_path);
         assert!(book.is_ok());
         book.unwrap()
     }
 
-    #[test_with::env(OPENING_BOOK)]
     #[test]
     fn book_read() {
-        get_polygot_book();
+        if let Ok(opening_book_path) = env::var("OPENING_BOOK") {
+            get_polygot_book(&opening_book_path);
+        }
     }
 
-    #[test_with::env(OPENING_BOOK)]
     #[test]
     fn book_find_setup() {
-        let book = get_polygot_book();
+        let opening_book_path = env::var("OPENING_BOOK");
+        if opening_book_path.is_err() {
+            return;
+        }
+        let book = get_polygot_book(&opening_book_path.expect("OPENING_BOOK must be set"));
         let entries = book.find(0x463b96181691fc9c);
         assert!(entries.len() > 0);
         // First entry should be King's pawn

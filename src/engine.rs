@@ -456,12 +456,17 @@ mod tests {
         assert_eq!(b.as_move_string(&board), Some(String::from("Rd4")));
     }
 
-    #[test_with::env(OPENING_BOOK)]
     #[test]
     fn test_opening_book() {
+        let opening_book_path = env::var("OPENING_BOOK");
+        if opening_book_path.is_err() {
+            return;
+        }
+
         let board = Board::new_setup();
 
-        let book = PolyglotOpeningBook::read(env::var("OPENING_BOOK").expect("need OPENING_BOOK"))
+        let book =
+            PolyglotOpeningBook::read(opening_book_path.expect("OPENING_BOOK should be set"))
             .expect("should be able to read opening book");
         let mut engine = EngineBuilder::new()
             .with_opening_book(Box::new(book))
