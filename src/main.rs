@@ -1,10 +1,21 @@
-use neochess::{board::Board, engine::Engine};
-use std::io::{stdin, BufRead};
+use neochess::{board::Board, book::PolyglotOpeningBook, engine::EngineBuilder};
+use std::{
+    env,
+    io::{stdin, BufRead},
+};
 
 fn main() {
     let depth = 8;
 
-    let mut engine = Engine::default();
+    let mut engine_builder = EngineBuilder::new();
+
+    if let Ok(opening_book_path) = env::var("OPENING_BOOK") {
+        let opening_book = PolyglotOpeningBook::read(opening_book_path)
+            .expect("should be able to read opening book");
+        engine_builder = engine_builder.with_opening_book(Box::new(opening_book));
+    }
+
+    let mut engine = engine_builder.build();
     let mut board = Board::new_setup();
 
     let input = read_option("Play as (w/b/fen): ", vec!["w", "b", "fen"]);
