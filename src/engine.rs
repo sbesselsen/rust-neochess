@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::{
     board::{board_move::BoardMove, Board, COLOR_WHITE},
     book::{EmptyOpeningBook, OpeningBook},
-    evaluator::{default::DefaultEvaluator, Evaluator},
+    evaluator::{basic::BasicEvaluator, Evaluator},
     score::Score,
 };
 
@@ -91,7 +91,7 @@ impl From<EngineBuilder> for Engine {
     fn from(builder: EngineBuilder) -> Self {
         let evaluator = builder
             .evaluator
-            .unwrap_or_else(|| Box::new(DefaultEvaluator::new()));
+            .unwrap_or_else(|| Box::new(BasicEvaluator::new()));
 
         let opening_book = builder
             .opening_book

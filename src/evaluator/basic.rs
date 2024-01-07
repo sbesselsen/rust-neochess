@@ -4,9 +4,9 @@ use crate::{
 };
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DefaultEvaluator;
+pub struct BasicEvaluator;
 
-impl DefaultEvaluator {
+impl BasicEvaluator {
     pub fn new() -> Self {
         Self {}
     }
@@ -39,13 +39,13 @@ impl DefaultEvaluator {
     }
 }
 
-impl Default for DefaultEvaluator {
+impl Default for BasicEvaluator {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Evaluator for DefaultEvaluator {
+impl Evaluator for BasicEvaluator {
     fn evaluate(&self, board: &Board, for_color: usize) -> Score {
         let score = self.evaluate_for_white(board);
         if for_color == COLOR_WHITE {
@@ -109,11 +109,11 @@ mod tests {
         evaluator::{Evaluator, Score},
     };
 
-    use super::DefaultEvaluator;
+    use super::BasicEvaluator;
 
     #[test]
     fn trivial_zeros() {
-        let eval = DefaultEvaluator::new();
+        let eval = BasicEvaluator::new();
         assert_eq!(
             eval.evaluate(&Board::new_setup(), COLOR_WHITE),
             Score::Value(0)
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn dead_kings() {
-        let eval = DefaultEvaluator::new();
+        let eval = BasicEvaluator::new();
         let board = Board::new_setup().apply_mutation(|b| {
             b.king[COLOR_WHITE] = 0;
         });
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn eval_some_board() {
-        let eval = DefaultEvaluator::new();
+        let eval = BasicEvaluator::new();
         let board =
             Board::try_parse_fen("8/6p1/1N1kbp2/1p2pR2/6P1/3PBBNr/1P6/3K4 w - - 0 1").unwrap();
         assert_eq!(eval.evaluate(&board, COLOR_WHITE), Score::Value(800));
