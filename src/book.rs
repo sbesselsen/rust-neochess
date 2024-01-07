@@ -18,6 +18,20 @@ pub trait OpeningBook {
     fn find(&self, key: u64) -> Vec<OpeningBookEntry>;
 }
 
+pub struct EmptyOpeningBook;
+
+impl EmptyOpeningBook {
+    pub fn new() -> EmptyOpeningBook {
+        EmptyOpeningBook {}
+    }
+}
+
+impl OpeningBook for EmptyOpeningBook {
+    fn find(&self, key: u64) -> Vec<OpeningBookEntry> {
+        Vec::with_capacity(0)
+    }
+}
+
 pub struct PolyglotOpeningBook {
     data: Vec<u8>,
 }
@@ -143,12 +157,11 @@ impl OpeningBook for PolyglotOpeningBook {
     }
 }
 
-#[test_with::env(OPENING_BOOK)]
 #[cfg(test)]
 mod tests {
     use std::env;
 
-    use super::{OpeningBook, PolyglotOpeningBook};
+    use super::{EmptyOpeningBook, OpeningBook, PolyglotOpeningBook};
 
     fn get_polygot_book() -> PolyglotOpeningBook {
         // TODO: include a small opening book for testing?
@@ -158,11 +171,13 @@ mod tests {
         book.unwrap()
     }
 
+    #[test_with::env(OPENING_BOOK)]
     #[test]
     fn book_read() {
         get_polygot_book();
     }
 
+    #[test_with::env(OPENING_BOOK)]
     #[test]
     fn book_find_setup() {
         let book = get_polygot_book();
@@ -176,5 +191,11 @@ mod tests {
         assert!(entries
             .iter()
             .any(|e| e.board_move.from_index == 51 && e.board_move.to_index == 35));
+    }
+
+    #[test]
+    fn empty_book() {
+        let book = EmptyOpeningBook::new();
+        assert_eq!(book.find(0x463b96181691fc9c).len(), 0);
     }
 }
