@@ -158,13 +158,11 @@ mod tests {
         book.unwrap()
     }
 
-    #[ignore]
     #[test]
     fn book_read() {
         get_polygot_book();
     }
 
-    #[ignore]
     #[test]
     fn book_find_setup() {
         let book = get_polygot_book();
