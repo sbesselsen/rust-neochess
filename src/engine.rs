@@ -7,7 +7,7 @@ use crate::{
 };
 
 // TODO: do something sensible with this
-const OPENING_BOOK_WEIGHT_THRESHOLD: u16 = 100;
+const OPENING_BOOK_WEIGHT_THRESHOLD: u16 = 10;
 
 #[derive(Default)]
 pub struct EngineBuilder {
@@ -467,7 +467,7 @@ mod tests {
 
         let book =
             PolyglotOpeningBook::read(opening_book_path.expect("OPENING_BOOK should be set"))
-            .expect("should be able to read opening book");
+                .expect("should be able to read opening book");
         let mut engine = EngineBuilder::new()
             .with_opening_book(Box::new(book))
             .build();
