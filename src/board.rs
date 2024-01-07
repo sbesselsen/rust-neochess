@@ -1,5 +1,20 @@
+pub mod board_move;
+pub mod castling_side;
+pub mod color;
+pub mod color_helper;
+pub mod errors;
+pub mod piece;
+
 use crate::{
     bitwise_helper::BitwiseHelper,
+    board::{
+        board_move::BoardMove,
+        castling_side::CastlingSide,
+        color::Color,
+        color_helper::ColorHelper,
+        errors::{BoardMoveError, FenParseError},
+        piece::Piece,
+    },
     zobrist::{
         zobrist_castling, zobrist_color, zobrist_color_swap, zobrist_en_passant, zobrist_piece,
     },
@@ -37,171 +52,9 @@ pub struct Board {
     pub zobrist_hash: u64,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Piece {
-    Pawn,
-    Rook,
-    Knight,
-    Bishop,
-    Queen,
-    King,
-}
-
-impl Display for Piece {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Piece::Pawn => f.write_str("P"),
-            Piece::Rook => f.write_str("R"),
-            Piece::Knight => f.write_str("N"),
-            Piece::Bishop => f.write_str("B"),
-            Piece::Queen => f.write_str("Q"),
-            Piece::King => f.write_str("K"),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Color {
-    White = 0,
-    Black = 1,
-}
-impl Display for Color {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Color::White => f.write_str("w"),
-            Color::Black => f.write_str("b"),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum CastlingSide {
-    Queen = 0,
-    King = 1,
-}
-impl Display for CastlingSide {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CastlingSide::Queen => f.write_str("queenside"),
-            CastlingSide::King => f.write_str("kingside"),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BoardMove {
-    pub from_index: u32,
-    pub to_index: u32,
-    pub promote_to: Option<Piece>,
-}
-
-impl BoardMove {
-    pub fn new(from_index: u32, to_index: u32) -> BoardMove {
-        BoardMove {
-            from_index,
-            to_index,
-            promote_to: None,
-        }
-    }
-
-    pub fn new_promotion(from_index: u32, to_index: u32, promote_to: Piece) -> BoardMove {
-        BoardMove {
-            from_index,
-            to_index,
-            promote_to: Some(promote_to),
-        }
-    }
-}
-
-impl Display for BoardMove {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut output = String::with_capacity(5);
-        output.push_str(&Board::coords_to_string(self.from_index));
-        output.push('-');
-        output.push_str(&Board::coords_to_string(self.to_index));
-        f.write_str(&output)?;
-        if let Some(piece) = self.promote_to {
-            f.write_str("=")?;
-            Display::fmt(&piece, f)?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct FenParseError {
-    message: String,
-}
-
-impl From<String> for FenParseError {
-    fn from(message: String) -> Self {
-        FenParseError { message }
-    }
-}
-
-impl From<&str> for FenParseError {
-    fn from(message: &str) -> Self {
-        FenParseError {
-            message: String::from(message),
-        }
-    }
-}
-
-impl Display for FenParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("FenParseError: ")?;
-        f.write_str(&self.message)
-    }
-}
-
-#[derive(Debug)]
-pub struct BoardMoveError {
-    message: String,
-}
-
-impl From<String> for BoardMoveError {
-    fn from(message: String) -> Self {
-        BoardMoveError { message }
-    }
-}
-
-impl From<&str> for BoardMoveError {
-    fn from(message: &str) -> Self {
-        BoardMoveError {
-            message: String::from(message),
-        }
-    }
-}
-
-impl Display for BoardMoveError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("BoardMoveError: ")?;
-        f.write_str(&self.message)
-    }
-}
-
 impl Hash for Board {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.zobrist_hash.hash(state);
-    }
-}
-
-trait ColorHelper {
-    fn wb<T>(&self, white: T, black: T) -> T;
-    fn opponent(&self) -> Self;
-}
-
-impl ColorHelper for usize {
-    fn wb<T>(&self, white: T, black: T) -> T {
-        if *self == COLOR_WHITE {
-            white
-        } else {
-            black
-        }
-    }
-
-    fn opponent(&self) -> Self {
-        self.wb(COLOR_BLACK, COLOR_WHITE)
     }
 }
 

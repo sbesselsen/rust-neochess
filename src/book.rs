@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use crate::board::{BoardMove, Piece};
+use crate::board::{board_move::BoardMove, piece::Piece};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OpeningBookEntry {

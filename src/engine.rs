@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    board::{Board, BoardMove, COLOR_WHITE},
+    board::{board_move::BoardMove, Board, COLOR_WHITE},
     book::{EmptyOpeningBook, OpeningBook},
     evaluator::{default::DefaultEvaluator, Evaluator},
     score::Score,

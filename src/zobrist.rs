@@ -1,4 +1,4 @@
-use crate::board::{CastlingSide, Color, Piece};
+use crate::board::{castling_side::CastlingSide, color::Color, piece::Piece};
 
 use self::constants::ZOBRIST_RANDOM;
 
