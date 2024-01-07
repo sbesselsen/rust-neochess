@@ -26,8 +26,14 @@ impl EmptyOpeningBook {
     }
 }
 
+impl Default for EmptyOpeningBook {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OpeningBook for EmptyOpeningBook {
-    fn find(&self, key: u64) -> Vec<OpeningBookEntry> {
+    fn find(&self, _key: u64) -> Vec<OpeningBookEntry> {
         Vec::with_capacity(0)
     }
 }
@@ -153,7 +159,7 @@ impl OpeningBook for PolyglotOpeningBook {
     fn find(&self, key: u64) -> Vec<OpeningBookEntry> {
         self.binary_search(key, 0, self.last_index())
             .map(|index| self.read_entries_around(index))
-            .unwrap_or_else(|| vec![])
+            .unwrap_or_else(|| Vec::with_capacity(0))
     }
 }
 
