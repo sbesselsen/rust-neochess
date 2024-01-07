@@ -2,13 +2,18 @@ use std::fmt::Debug;
 
 use crate::{
     board::{Board, BoardMove, COLOR_WHITE},
+    book::{EmptyOpeningBook, OpeningBook},
     evaluator::{DefaultEvaluator, Evaluator, EvaluatorScore},
 };
+
+// TODO: do something sensible with this
+const OPENING_BOOK_WEIGHT_THRESHOLD: u16 = 100;
 
 #[derive(Default)]
 pub struct EngineBuilder {
     pub transposition_table_size: Option<usize>,
     pub evaluator: Option<Box<dyn Evaluator>>,
+    pub opening_book: Option<Box<dyn OpeningBook>>,
 }
 
 impl EngineBuilder {
@@ -19,6 +24,13 @@ impl EngineBuilder {
     pub fn with_evaluator(self, evaluator: Box<dyn Evaluator>) -> Self {
         Self {
             evaluator: Some(evaluator),
+            ..self
+        }
+    }
+
+    pub fn with_opening_book(self, opening_book: Box<dyn OpeningBook>) -> Self {
+        Self {
+            opening_book: Some(opening_book),
             ..self
         }
     }
@@ -55,6 +67,7 @@ struct TranspositionTableEntry {
 
 pub struct Engine {
     evaluator: Box<dyn Evaluator>,
+    opening_book: Box<dyn OpeningBook>,
     transposition_table: Vec<Option<TranspositionTableEntry>>,
     stats: EngineStats,
 }
@@ -79,6 +92,10 @@ impl From<EngineBuilder> for Engine {
             .evaluator
             .unwrap_or_else(|| Box::new(DefaultEvaluator::new()));
 
+        let opening_book = builder
+            .opening_book
+            .unwrap_or_else(|| Box::new(EmptyOpeningBook::new()));
+
         let transposition_table_size = builder.transposition_table_size.unwrap_or(1_000_000);
         let mut transposition_table: Vec<Option<TranspositionTableEntry>> =
             Vec::with_capacity(transposition_table_size);
@@ -86,6 +103,7 @@ impl From<EngineBuilder> for Engine {
 
         Engine {
             evaluator,
+            opening_book,
             transposition_table,
             stats: EngineStats::default(),
         }
@@ -104,6 +122,16 @@ impl Engine {
 
         // Reset stats
         self.stats = EngineStats::default();
+
+        let mut book_moves = self.opening_book.find(board.zobrist_hash);
+        book_moves.retain(|e| e.weight >= OPENING_BOOK_WEIGHT_THRESHOLD);
+        if !book_moves.is_empty() {
+            let mv = book_moves[0].board_move;
+            if let Ok(board_after_move) = board.apply_board_move(&mv) {
+                // TODO: do something sensible with the score here
+                return (Some(board_after_move), EvaluatorScore::Value(50));
+            }
+        }
 
         let (mv, score) = self.search_inner(
             board,
@@ -273,9 +301,13 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use crate::{
         bitwise_helper::BitwiseHelper,
         board::{Board, COLOR_BLACK, COLOR_WHITE},
+        book::PolyglotOpeningBook,
+        engine::EngineBuilder,
         evaluator::EvaluatorScore,
     };
 
@@ -422,5 +454,25 @@ mod tests {
         let b = b.unwrap();
 
         assert_eq!(b.as_move_string(&board), Some(String::from("Rd4")));
+    }
+
+    #[test_with::env(OPENING_BOOK)]
+    #[test]
+    fn test_opening_book() {
+        let board = Board::new_setup();
+
+        let book = PolyglotOpeningBook::read(env::var("OPENING_BOOK").expect("need OPENING_BOOK"))
+            .expect("should be able to read opening book");
+        let mut engine = EngineBuilder::new()
+            .with_opening_book(Box::new(book))
+            .build();
+
+        let (b, _score) = engine.search(&board, 6);
+
+        assert!(b.is_some());
+        let b = b.unwrap();
+
+        let mv = b.as_move_string(&board).unwrap();
+        assert!(mv == "e4" || mv == "d4");
     }
 }

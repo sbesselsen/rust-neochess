@@ -8,9 +8,9 @@ use crate::board::{BoardMove, Piece};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OpeningBookEntry {
-    key: u64,
-    board_move: BoardMove,
-    weight: u16,
+    pub key: u64,
+    pub board_move: BoardMove,
+    pub weight: u16,
     learn: u32,
 }
 
