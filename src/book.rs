@@ -143,6 +143,7 @@ impl OpeningBook for PolyglotOpeningBook {
     }
 }
 
+#[test_with::env(OPENING_BOOK)]
 #[cfg(test)]
 mod tests {
     use std::env;
