@@ -125,13 +125,13 @@ impl PolyglotOpeningBook {
     fn read_entries_around(&self, index: usize) -> Vec<OpeningBookEntry> {
         let key = self.read_key_at(index);
 
-        let start_index = (0..index)
+        let start_index = (0..=index)
             .rev()
             .take_while(|&i| self.read_key_at(i) == key)
             .last()
             .expect("at least one index should have the right key");
 
-        (start_index..self.last_index())
+        (start_index..=self.last_index())
             .take_while(|&i| self.read_key_at(i) == key)
             .filter_map(|i| {
                 self.read_move_at(i).map(|board_move| OpeningBookEntry {
