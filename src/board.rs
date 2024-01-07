@@ -1086,9 +1086,21 @@ impl Board {
                     b.pawns[self.active_color].move_bit(*from_index, *to_index);
 
                     if self.active_color == COLOR_WHITE && *to_index == *from_index - 16 {
-                        b.en_passant_square = Some(*from_index - 8);
+                        let ep_bit_mask = u64::from_bit(*from_index - 8);
+                        let ep_attacker_bit_mask = (((ep_bit_mask & !FILE_0_MASK) << 1)
+                            | ((ep_bit_mask & !(FILE_0_MASK >> 7)) >> 1))
+                            << 8;
+                        if ep_attacker_bit_mask & b.pawns[opponent_color] > 0 {
+                            b.en_passant_square = Some(*from_index - 8);
+                        }
                     } else if self.active_color == COLOR_BLACK && *to_index == *from_index + 16 {
-                        b.en_passant_square = Some(*from_index + 8);
+                        let ep_bit_mask = u64::from_bit(*from_index + 8);
+                        let ep_attacker_bit_mask = (((ep_bit_mask & !FILE_0_MASK) << 1)
+                            | ((ep_bit_mask & !(FILE_0_MASK >> 7)) >> 1))
+                            >> 8;
+                        if ep_attacker_bit_mask & b.pawns[opponent_color] > 0 {
+                            b.en_passant_square = Some(*from_index + 8);
+                        }
                     }
 
                     if let Some(en_passant_index) = self.en_passant_square {
@@ -1402,19 +1414,24 @@ impl Board {
         }
 
         // Move 2 steps forward.
-        let move_2_mask = move_1_mask.shift_lr(move_offset)
-            & self.active_color.wb(RANK_0_MASK << 24, RANK_0_MASK << 32)
-            & !occupancy;
+        let fourth_rank_forward = self.active_color.wb(RANK_0_MASK << 24, RANK_0_MASK << 32);
+        let move_2_mask = move_1_mask.shift_lr(move_offset) & fourth_rank_forward & !occupancy;
+        let potential_ep_attackers_mask = fourth_rank_forward & self.pawns[opponent_color];
+        let ep_attacked_mask = (((potential_ep_attackers_mask & !FILE_0_MASK) << 1)
+            | ((potential_ep_attackers_mask & !(FILE_0_MASK >> 7)) >> 1))
+            .shift_lr(-move_offset);
         for to_index in move_2_mask.as_bit_index_iter() {
             let en_passant_index = (to_index as i32) - move_offset;
+
             let from_index = en_passant_index - move_offset;
 
             output.push(self.apply_mutation(|b| {
                 b.pawns[self.active_color].move_bit(from_index as u32, to_index);
-                b.en_passant_square = Some(en_passant_index as u32);
+                if ep_attacked_mask.bit_at_index(en_passant_index as u32) {
+                    b.en_passant_square = Some(en_passant_index as u32);
+                }
             }));
         }
-
         // Capture.
         let capture_left_mask =
             (self.pawns[self.active_color] & !FILE_0_MASK).shift_lr(move_offset - 1);
@@ -1892,6 +1909,25 @@ mod tests {
             .collect();
 
         assert_eq!(en_passant_captures.len(), 2);
+    }
+
+    #[test]
+    fn en_passant_when_warranted() {
+        let mut board = Board::new_setup();
+        board.pawns[COLOR_BLACK] |= 0x0000000040000000;
+        println!("{}", board);
+
+        let mut pawn_moves: Vec<Board> = vec![];
+        board.push_pawn_moves(&mut pawn_moves);
+
+        assert_eq!(pawn_moves.len(), 15);
+        assert_eq!(
+            pawn_moves
+                .iter()
+                .filter(|b| b.en_passant_square.is_some())
+                .count(),
+            2
+        );
     }
 
     #[test]
@@ -2557,7 +2593,7 @@ mod tests {
             .into_iter()
             .filter(|b| b.en_passant_square.is_some())
             .collect();
-        assert_eq!(en_passants.len(), 7);
+        assert_eq!(en_passants.len(), 2);
 
         let en_passant_captures: Vec<(Board, Board)> = en_passants
             .into_iter()
