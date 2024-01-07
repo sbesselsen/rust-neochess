@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use crate::board::BoardMove;
+use crate::board::{BoardMove, Piece};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OpeningBookEntry {
@@ -59,6 +59,37 @@ impl PolyglotOpeningBook {
         u64::from_be_bytes(bytes)
     }
 
+    fn read_move_at(&self, index: usize) -> Option<BoardMove> {
+        let start = index * 16 + 8;
+        let end = start + 2;
+        let bytes: [u8; 2] = self.data[start..end]
+            .try_into()
+            .expect("index should be valid");
+        let move_encoded = u16::from_be_bytes(bytes);
+        if move_encoded == 0 {
+            // Apparently there could be null moves in here.
+            return None;
+        }
+        let to_file = move_encoded & 0x7;
+        let to_rank = (move_encoded >> 3) & 0x7;
+        let to_index = ((7 - to_rank) * 8 + to_file) as u32;
+        let from_file = (move_encoded >> 6) & 0x7;
+        let from_rank = (move_encoded >> 9) & 0x7;
+        let from_index = ((7 - from_rank) * 8 + from_file) as u32;
+        let promotion_piece = match (move_encoded >> 12) & 0x7 {
+            1 => Some(Piece::Knight),
+            2 => Some(Piece::Bishop),
+            3 => Some(Piece::Rook),
+            4 => Some(Piece::Queen),
+            _ => None,
+        };
+        if let Some(promote_to) = promotion_piece {
+            Some(BoardMove::new_promotion(from_index, to_index, promote_to))
+        } else {
+            Some(BoardMove::new(from_index, to_index))
+        }
+    }
+
     fn read_weight_at(&self, index: usize) -> u16 {
         let start = index * 16 + 10;
         let end = start + 2;
@@ -79,22 +110,19 @@ impl PolyglotOpeningBook {
 
     fn read_entries_around(&self, index: usize) -> Vec<OpeningBookEntry> {
         let key = self.read_key_at(index);
+
         let start_index = (0..index)
             .rev()
             .take_while(|&i| self.read_key_at(i) == key)
             .last()
             .expect("at least one index should have the right key");
-        (start_index..self.last_index())
-            .map_while(|i| {
-                let k = self.read_key_at(i);
-                if k != key {
-                    return None;
-                }
 
-                // TODO: read the move
-                Some(OpeningBookEntry {
+        (start_index..self.last_index())
+            .take_while(|&i| self.read_key_at(i) == key)
+            .filter_map(|i| {
+                self.read_move_at(i).map(|board_move| OpeningBookEntry {
                     key,
-                    board_move: BoardMove::new(0, 1),
+                    board_move,
                     weight: self.read_weight_at(i),
                     learn: self.read_learn_at(i),
                 })
@@ -140,10 +168,14 @@ mod tests {
     fn book_find_setup() {
         let book = get_polygot_book();
         let entries = book.find(0x463b96181691fc9c);
-        for e in &entries {
-            println!("{:?}", e);
-        }
-        assert_eq!(entries.len(), 0);
         assert!(entries.len() > 0);
+        // First entry should be King's pawn
+        assert_eq!(entries[0].board_move.from_index, 52);
+        assert_eq!(entries[0].board_move.to_index, 36);
+
+        // Queen's pawn ought to be in there too.
+        assert!(entries
+            .iter()
+            .any(|e| e.board_move.from_index == 51 && e.board_move.to_index == 35));
     }
 }
