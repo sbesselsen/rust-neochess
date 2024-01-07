@@ -3,7 +3,8 @@ use std::fmt::Debug;
 use crate::{
     board::{Board, BoardMove, COLOR_WHITE},
     book::{EmptyOpeningBook, OpeningBook},
-    evaluator::{DefaultEvaluator, Evaluator, EvaluatorScore},
+    evaluator::{default::DefaultEvaluator, Evaluator},
+    score::Score,
 };
 
 // TODO: do something sensible with this
@@ -60,7 +61,7 @@ impl Eq for TranspositionTableBound {}
 struct TranspositionTableEntry {
     zobrist_hash: u64,
     depth: u32,
-    score: EvaluatorScore,
+    score: Score,
     bound: TranspositionTableBound,
     best_move: Option<BoardMove>,
 }
@@ -117,7 +118,7 @@ impl Default for Engine {
 }
 
 impl Engine {
-    pub fn search(&mut self, board: &Board, depth: u32) -> (Option<Board>, EvaluatorScore) {
+    pub fn search(&mut self, board: &Board, depth: u32) -> (Option<Board>, Score) {
         assert!(depth > 0, "depth should be at least 1");
 
         // Reset stats
@@ -129,7 +130,7 @@ impl Engine {
             let mv = book_moves[0].board_move;
             if let Ok(board_after_move) = board.apply_board_move(&mv) {
                 // TODO: do something sensible with the score here
-                return (Some(board_after_move), EvaluatorScore::Value(50));
+                return (Some(board_after_move), Score::Value(50));
             }
         }
 
@@ -137,8 +138,8 @@ impl Engine {
             board,
             depth,
             false,
-            EvaluatorScore::MinusInfinity,
-            EvaluatorScore::PlusInfinity,
+            Score::MinusInfinity,
+            Score::PlusInfinity,
         );
         let board_after_move = mv.map(|mv| {
             board
@@ -161,9 +162,9 @@ impl Engine {
         board: &Board,
         depth: u32,
         allow_null: bool,
-        alpha: EvaluatorScore,
-        beta: EvaluatorScore,
-    ) -> (Option<BoardMove>, EvaluatorScore) {
+        alpha: Score,
+        beta: Score,
+    ) -> (Option<BoardMove>, Score) {
         self.stats.nodes += 1;
 
         let alpha_orig = alpha;
@@ -239,15 +240,15 @@ impl Engine {
 
         if next_boards.is_empty() {
             let score = if board.is_check() {
-                EvaluatorScore::MinusInfinity
+                Score::MinusInfinity
             } else {
-                EvaluatorScore::Value(0)
+                Score::Value(0)
             };
             return (None, score);
         }
 
         let mut best_board: Option<Board> = None;
-        let mut best_score = EvaluatorScore::MinusInfinity;
+        let mut best_score = Score::MinusInfinity;
 
         for b in next_boards {
             let (_, score) = self.search_inner(&b, depth - 1, true, -beta, -alpha);
@@ -308,7 +309,7 @@ mod tests {
         board::{Board, COLOR_BLACK, COLOR_WHITE},
         book::PolyglotOpeningBook,
         engine::EngineBuilder,
-        evaluator::EvaluatorScore,
+        score::Score,
     };
 
     use super::Engine;
@@ -329,7 +330,7 @@ mod tests {
         let (b, score) = engine.search(&board, 3);
 
         // The engine notices this is checkmate.
-        assert_eq!(score, EvaluatorScore::PlusInfinity);
+        assert_eq!(score, Score::PlusInfinity);
 
         assert!(b.is_some());
         assert_eq!(
@@ -350,7 +351,7 @@ mod tests {
         let (b, score) = engine.search(&board, 4);
 
         // The engine notices this is checkmate.
-        assert_eq!(score, EvaluatorScore::PlusInfinity);
+        assert_eq!(score, Score::PlusInfinity);
 
         // It got the right move.
         assert!(b.is_some());
