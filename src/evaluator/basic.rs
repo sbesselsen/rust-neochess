@@ -1,5 +1,5 @@
 use crate::{
-    board::{Board, COLOR_BLACK, COLOR_WHITE, RANK_0_MASK},
+    board::{Board, COLOR_BLACK, COLOR_WHITE},
     evaluator::{Evaluator, Score},
 };
 
