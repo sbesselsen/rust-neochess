@@ -1,6 +1,7 @@
 use crate::{board::Board, score::Score};
 
 pub mod basic;
+pub mod pesto;
 
 pub trait Evaluator {
     fn evaluate(&self, board: &Board, for_color: usize) -> Score;
