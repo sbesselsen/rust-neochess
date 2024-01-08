@@ -232,7 +232,7 @@ impl Engine {
         next_boards.sort_by_cached_key(|b| {
             if let Some(tt_best_board) = &tt_best_board {
                 if b == tt_best_board {
-                    return -1000;
+                    return -10_000;
                 }
             }
             self.evaluator.evaluate_move_by_board(board, b)
