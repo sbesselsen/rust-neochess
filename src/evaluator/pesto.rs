@@ -1,7 +1,7 @@
 use crate::{
     bitwise_helper::BitwiseHelper,
     board::{Board, COLOR_BLACK, COLOR_WHITE},
-    evaluator::{basic::BasicEvaluator, Evaluator},
+    evaluator::Evaluator,
     score::Score,
 };
 
@@ -18,7 +18,6 @@ use self::constants::{
 mod constants;
 
 pub struct PestoEvaluator {
-    basic_evaluator: BasicEvaluator,
     midgame_table: [[[i32; 64]; 6]; 2],
     endgame_table: [[[i32; 64]; 6]; 2],
 }
@@ -26,7 +25,6 @@ pub struct PestoEvaluator {
 impl PestoEvaluator {
     pub fn new() -> Self {
         Self {
-            basic_evaluator: BasicEvaluator::new(),
             midgame_table: generate_midgame_table(),
             endgame_table: generate_endgame_table(),
         }
@@ -85,8 +83,44 @@ impl Evaluator for PestoEvaluator {
     }
 
     fn evaluate_move_by_board(&self, prev_board: &Board, board: &Board) -> i32 {
-        self.basic_evaluator
-            .evaluate_move_by_board(prev_board, board)
+        if board.is_check() {
+            // Checks go first!
+            return -1_000;
+        }
+
+        let self_occupancy = board.occupancy_bits_for(board.active_color);
+        let prev_self_occupancy = prev_board.occupancy_bits_for(board.active_color);
+
+        if self_occupancy != prev_self_occupancy {
+            let captured_mask = prev_self_occupancy & !self_occupancy;
+
+            // What was captured?
+            let captured_value = MIDGAME_PIECE_VALUES[0]
+                * (captured_mask & prev_board.pawns[board.active_color]).count_ones() as i32
+                + MIDGAME_PIECE_VALUES[1]
+                    * (captured_mask & prev_board.knights[board.active_color]).count_ones() as i32
+                + MIDGAME_PIECE_VALUES[2]
+                    * (captured_mask & prev_board.bishops[board.active_color]).count_ones() as i32
+                + MIDGAME_PIECE_VALUES[3]
+                    * (captured_mask & prev_board.rooks[board.active_color]).count_ones() as i32
+                + MIDGAME_PIECE_VALUES[4]
+                    * (captured_mask & prev_board.queens[board.active_color]).count_ones() as i32;
+
+            let capturer_value = MIDGAME_PIECE_VALUES[0]
+                * (captured_mask & board.pawns[prev_board.active_color]).count_ones() as i32
+                + MIDGAME_PIECE_VALUES[1]
+                    * (captured_mask & board.knights[prev_board.active_color]).count_ones() as i32
+                + MIDGAME_PIECE_VALUES[2]
+                    * (captured_mask & board.bishops[prev_board.active_color]).count_ones() as i32
+                + MIDGAME_PIECE_VALUES[3]
+                    * (captured_mask & board.rooks[prev_board.active_color]).count_ones() as i32
+                + MIDGAME_PIECE_VALUES[4]
+                    * (captured_mask & board.queens[prev_board.active_color]).count_ones() as i32;
+
+            // MVV-LVA
+            return capturer_value - captured_value;
+        }
+        1_000
     }
 }
 
@@ -143,7 +177,7 @@ fn generate_piece_table(
 #[cfg(test)]
 mod tests {
     use crate::{
-        board::{Board, COLOR_WHITE},
+        board::{board_move::BoardMove, Board, COLOR_BLACK, COLOR_WHITE},
         evaluator::{
             pesto::constants::{ENDGAME_PIECE_VALUES, ENDGAME_QUEEN_VALUES},
             Evaluator,
@@ -185,6 +219,26 @@ mod tests {
         assert_eq!(
             Score::Value(0),
             evaluator.evaluate(&Board::new_setup(), COLOR_WHITE)
+        );
+
+        let board = Board::new_setup();
+        let kings_pawn = board.apply_board_move(&BoardMove::new(52, 36)).unwrap();
+        let f_pawn = board.apply_board_move(&BoardMove::new(53, 37)).unwrap();
+
+        // Good openings are good
+        assert!(evaluator.evaluate(&kings_pawn, COLOR_WHITE) > Score::Value(0));
+
+        // Bad openings are bad
+        assert!(evaluator.evaluate(&f_pawn, COLOR_WHITE) < Score::Value(0));
+
+        // Score for black is the negation of the score for white
+        assert_eq!(
+            evaluator.evaluate(&kings_pawn, COLOR_WHITE),
+            -evaluator.evaluate(&kings_pawn, COLOR_BLACK)
+        );
+        assert_eq!(
+            evaluator.evaluate(&f_pawn, COLOR_WHITE),
+            -evaluator.evaluate(&f_pawn, COLOR_BLACK)
         );
     }
 }
