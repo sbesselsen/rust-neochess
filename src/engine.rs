@@ -85,6 +85,7 @@ impl Debug for Engine {
 #[derive(Copy, Clone, Debug, Default)]
 pub struct EngineStats {
     nodes: u32,
+    quiescence_nodes: u32,
     leaves: u32,
 }
 
@@ -209,7 +210,7 @@ impl Engine {
 
         if depth == 0 {
             self.stats.leaves += 1;
-            return (None, self.evaluator.evaluate(board, board.active_color));
+            return (None, self.quiescence(board, alpha, beta));
         }
 
         // Null move pruning
@@ -305,6 +306,50 @@ impl Engine {
 
         (best_move, best_score)
     }
+
+    fn quiescence(&mut self, board: &Board, alpha: Score, beta: Score) -> Score {
+        self.stats.quiescence_nodes += 1;
+
+        let mut alpha = alpha;
+
+        // Do a static eval. We do this to check that we don't make really dumb captures.
+        // For example: if the only capture I can do is capture a defended pawn with our queen,
+        // I am obviously not going to make that move in the game.
+        let static_eval = self.evaluator.evaluate(board, board.active_color);
+        alpha = alpha.max(static_eval);
+        if static_eval >= beta {
+            return beta;
+        }
+
+        // Keep captures only.
+        let mut next_boards = board.next_boards();
+
+        next_boards.retain(|b| {
+            b.occupancy_bits_for(b.active_color) != board.occupancy_bits_for(b.active_color)
+        });
+
+        if next_boards.is_empty() {
+            self.stats.leaves += 1;
+            return static_eval;
+        }
+
+        next_boards.sort_by_cached_key(|b| self.evaluator.evaluate_move_by_board(board, b));
+
+        for b in next_boards {
+            let score = -self.quiescence(&b, -beta, -alpha);
+            alpha = alpha.max(score);
+            if alpha >= beta {
+                // Cutoff: best score for the current player is better than the best guaranteed score for the other player.
+                // The game will never go down this path (and if it will, that's a bonus).
+
+                // Store this value in the transposition table, but note that it is not exact.
+                // Instead, it is a lower bound on what the real value will be.
+                break;
+            }
+        }
+
+        alpha
+    }
 }
 
 #[cfg(test)]
@@ -316,6 +361,7 @@ mod tests {
         board::{Board, COLOR_BLACK, COLOR_WHITE},
         book::PolyglotOpeningBook,
         engine::EngineBuilder,
+        evaluator::basic::BasicEvaluator,
         score::Score,
     };
 
@@ -426,7 +472,7 @@ mod tests {
 
         let mut engine = Engine::default();
 
-        let (b, _score) = engine.search(&board, 9);
+        let (b, _score) = engine.search(&board, 8);
 
         assert!(b.is_some());
 
@@ -487,5 +533,38 @@ mod tests {
 
         let mv = b.as_move_string(&board).unwrap();
         assert!(mv == "e4" || mv == "d4");
+    }
+
+    #[test]
+    fn test_quiescence() {
+        let mut engine = EngineBuilder::new()
+            .with_evaluator(Box::new(BasicEvaluator::new()))
+            .build();
+
+        // No captures possible in new setup.
+        let board = Board::new_setup();
+        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        assert_eq!(score, Score::Value(0));
+
+        // No captures on empty board.
+        let board = Board::new();
+        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        assert_eq!(score, Score::Value(0));
+
+        let board = Board::try_parse_fen("6k1/4qp1p/6p1/2b5/8/7P/2Q2PP1/2R3K1 w - - 0 1").unwrap();
+        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        assert_eq!(score, Score::Value(500));
+
+        let board = Board::try_parse_fen("6k1/4qp1p/6p1/2r5/8/7P/2Q2PP1/2B3K1 w - - 0 1").unwrap();
+        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        assert_eq!(score, Score::Value(-190));
+
+        let board = Board::try_parse_fen("6k1/4qp1p/6p1/2r5/8/7P/2Q2PP1/2B3K1 b - - 0 1").unwrap();
+        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        assert_eq!(score, Score::Value(1090));
+
+        let board = Board::try_parse_fen("6k1/4qp1p/6p1/2r5/8/7P/2Q2PP1/1B4K1 b - - 0 1").unwrap();
+        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        assert_eq!(score, Score::Value(590));
     }
 }
