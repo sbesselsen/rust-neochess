@@ -5,7 +5,7 @@ use std::{
 };
 
 fn main() {
-    let depth = 8;
+    let depth = 6;
 
     let mut engine_builder = EngineBuilder::new();
 
