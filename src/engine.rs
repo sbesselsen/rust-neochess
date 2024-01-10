@@ -12,7 +12,7 @@ const OPENING_BOOK_WEIGHT_THRESHOLD: u16 = 10;
 
 #[derive(Default)]
 pub struct EngineBuilder {
-    pub transposition_table_size: Option<usize>,
+    pub transposition_table_index_bits: Option<u8>,
     pub evaluator: Option<Box<dyn Evaluator>>,
     pub opening_book: Option<Box<dyn OpeningBook>>,
 }
@@ -36,9 +36,9 @@ impl EngineBuilder {
         }
     }
 
-    pub fn with_transposition_table_size(self, size: usize) -> Self {
+    pub fn with_transposition_table_index_bits(self, bits: u8) -> Self {
         Self {
-            transposition_table_size: Some(size),
+            transposition_table_index_bits: Some(bits),
             ..self
         }
     }
@@ -70,6 +70,7 @@ pub struct Engine {
     evaluator: Box<dyn Evaluator>,
     opening_book: Box<dyn OpeningBook>,
     transposition_table: Vec<Option<TranspositionTableEntry>>,
+    transposition_table_index_bits: u8,
     stats: EngineStats,
 }
 
@@ -97,7 +98,12 @@ impl From<EngineBuilder> for Engine {
             .opening_book
             .unwrap_or_else(|| Box::new(EmptyOpeningBook::new()));
 
-        let transposition_table_size = builder.transposition_table_size.unwrap_or(1_000_000);
+        let transposition_table_index_bits = builder.transposition_table_index_bits.unwrap_or(20);
+        assert!(
+            transposition_table_index_bits < 30,
+            "should not use more than 1 GB for the transposition table; no gains to be had"
+        );
+        let transposition_table_size = 2usize.pow(transposition_table_index_bits as u32);
         let mut transposition_table: Vec<Option<TranspositionTableEntry>> =
             Vec::with_capacity(transposition_table_size);
         transposition_table.resize_with(transposition_table_size, || None);
@@ -106,6 +112,7 @@ impl From<EngineBuilder> for Engine {
             evaluator,
             opening_book,
             transposition_table,
+            transposition_table_index_bits,
             stats: EngineStats::default(),
         }
     }
@@ -171,7 +178,7 @@ impl Engine {
         let mut alpha = alpha;
         let mut beta = beta;
 
-        let tt_index = (board.zobrist_hash % (self.transposition_table.len() as u64)) as usize;
+        let tt_index = (board.zobrist_hash >> (64 - self.transposition_table_index_bits)) as usize;
         let tt_entry =
             self.transposition_table[tt_index].filter(|e| e.zobrist_hash == board.zobrist_hash);
 
