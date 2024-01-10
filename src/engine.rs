@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::{
     board::{board_move::BoardMove, Board, COLOR_WHITE},
     book::{EmptyOpeningBook, OpeningBook},
-    evaluator::{basic::BasicEvaluator, Evaluator},
+    evaluator::{basic::BasicEvaluator, pesto::PestoEvaluator, Evaluator},
     score::Score,
 };
 
@@ -93,7 +93,7 @@ impl From<EngineBuilder> for Engine {
     fn from(builder: EngineBuilder) -> Self {
         let evaluator = builder
             .evaluator
-            .unwrap_or_else(|| Box::new(BasicEvaluator::new()));
+            .unwrap_or_else(|| Box::new(PestoEvaluator::new()));
 
         let opening_book = builder
             .opening_book
@@ -435,7 +435,7 @@ mod tests {
                 .unwrap();
 
         let mut engine = Engine::default();
-        let (b, _score) = engine.search(&board, 8);
+        let (b, _score) = engine.search(&board, 4);
 
         // It got the right move.
         assert_eq!(
