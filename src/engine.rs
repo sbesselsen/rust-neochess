@@ -493,7 +493,6 @@ mod tests {
 
         let mut engine = Engine::default();
 
-        // TODO: this fails if we increase the depth to 8!
         let (b, _score) = engine.search(&board, 6);
 
         assert!(b.is_some());
