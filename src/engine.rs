@@ -107,7 +107,7 @@ impl From<EngineBuilder> for Engine {
         let transposition_table_size = 2usize.pow(transposition_table_index_bits as u32);
         let mut transposition_table: Vec<Option<TranspositionTableEntry>> =
             Vec::with_capacity(transposition_table_size);
-        transposition_table.resize_with(transposition_table_size, || None);
+        transposition_table.resize(transposition_table_size, None);
 
         Engine {
             evaluator,
@@ -126,6 +126,14 @@ impl Default for Engine {
 }
 
 impl Engine {
+    pub fn reset_stats(&mut self) {
+        self.stats = Default::default();
+    }
+
+    pub fn reset_state(&mut self) {
+        self.transposition_table.fill(None);
+    }
+
     pub fn search(&mut self, board: &Board, depth: u32) -> (Option<Board>, Score) {
         assert!(depth > 0, "depth should be at least 1");
 
@@ -329,7 +337,6 @@ impl Engine {
         });
 
         if next_boards.is_empty() {
-            self.stats.leaves += 1;
             return static_eval;
         }
 
@@ -339,11 +346,6 @@ impl Engine {
             let score = -self.quiescence(&b, -beta, -alpha);
             alpha = alpha.max(score);
             if alpha >= beta {
-                // Cutoff: best score for the current player is better than the best guaranteed score for the other player.
-                // The game will never go down this path (and if it will, that's a bonus).
-
-                // Store this value in the transposition table, but note that it is not exact.
-                // Instead, it is a lower bound on what the real value will be.
                 break;
             }
         }
