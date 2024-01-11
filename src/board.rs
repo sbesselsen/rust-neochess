@@ -299,7 +299,7 @@ impl Board {
     }
 
     pub fn next_boards(&self) -> Vec<Board> {
-        let mut output = Vec::with_capacity(40);
+        let mut output = Vec::with_capacity(70);
 
         self.push_pawn_moves(&mut output);
         self.push_rooklike_moves(&mut output);
@@ -432,23 +432,24 @@ impl Board {
     }
 
     pub fn piece_at_index(&self, index: u32) -> Option<(Piece, Color)> {
+        let mask = u64::from_bit(index);
         for color in [Color::White, Color::Black] {
-            if self.pawns[color as usize].bit_at_index(index) {
+            if self.pawns[color as usize] & mask > 0 {
                 return Some((Piece::Pawn, color));
             }
-            if self.rooks[color as usize].bit_at_index(index) {
+            if self.rooks[color as usize] & mask > 0 {
                 return Some((Piece::Rook, color));
             }
-            if self.knights[color as usize].bit_at_index(index) {
+            if self.knights[color as usize] & mask > 0 {
                 return Some((Piece::Knight, color));
             }
-            if self.bishops[color as usize].bit_at_index(index) {
+            if self.bishops[color as usize] & mask > 0 {
                 return Some((Piece::Bishop, color));
             }
-            if self.queens[color as usize].bit_at_index(index) {
+            if self.queens[color as usize] & mask > 0 {
                 return Some((Piece::Queen, color));
             }
-            if self.king[color as usize].bit_at_index(index) {
+            if self.king[color as usize] & mask > 0 {
                 return Some((Piece::King, color));
             }
         }
