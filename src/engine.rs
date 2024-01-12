@@ -142,6 +142,7 @@ impl Engine {
             .expect("search should not be canceled")
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn cancelable_search(
         &mut self,
         board: &Board,
