@@ -1,13 +1,13 @@
-use std::{
-    fmt::Debug,
-    sync::{Arc, RwLock},
-};
+use std::fmt::Debug;
 
 use crate::{
     board::{board_move::BoardMove, Board, COLOR_WHITE},
     book::{EmptyOpeningBook, OpeningBook},
     evaluator::{pesto::PestoEvaluator, Evaluator},
     score::Score,
+    threading::{
+        CancelHandle, CancelSignal, InterruptableResult, InterruptedError, UnwrapOrInterrupt,
+    },
 };
 
 // TODO: do something sensible with this
@@ -69,61 +69,11 @@ struct TranspositionTableEntry {
     best_move: Option<BoardMove>,
 }
 
-pub struct CancelHandle {
-    is_stopped: RwLock<bool>,
-}
-
-impl CancelHandle {
-    fn new() -> Self {
-        CancelHandle {
-            is_stopped: RwLock::new(false),
-        }
-    }
-
-    pub fn is_stopped(&self) -> bool {
-        *self.is_stopped.read().expect("need to acquire read lock")
-    }
-
-    pub fn stop(&self) {
-        *self.is_stopped.write().expect("need to acquire write lock") = true;
-    }
-}
-
-type InterruptableResult<T> = Result<T, InterruptedError<T>>;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-struct InterruptedError<T>(T);
-
-trait UnwrapOrInterrupt {
-    type Output;
-    fn unwrap_or_partial(self) -> Self::Output;
-    fn unwrap_with_marker(self) -> (bool, Self::Output);
-}
-
-impl<T> UnwrapOrInterrupt for InterruptableResult<T> {
-    type Output = T;
-
-    fn unwrap_or_partial(self) -> Self::Output {
-        match self {
-            Ok(v) => v,
-            Err(InterruptedError(v)) => v,
-        }
-    }
-
-    fn unwrap_with_marker(self) -> (bool, Self::Output) {
-        match self {
-            Ok(v) => (false, v),
-            Err(InterruptedError(v)) => (true, v),
-        }
-    }
-}
-
 pub struct Engine {
     evaluator: Box<dyn Evaluator + Send>,
     opening_book: Box<dyn OpeningBook + Send>,
     transposition_table: Vec<Option<TranspositionTableEntry>>,
     transposition_table_index_bits: u8,
-    cancel_handle: Arc<CancelHandle>,
     stats: EngineStats,
 }
 
@@ -163,7 +113,6 @@ impl From<EngineBuilder> for Engine {
         transposition_table.resize(transposition_table_size, None);
 
         Engine {
-            cancel_handle: Arc::new(CancelHandle::new()),
             evaluator,
             opening_book,
             transposition_table,
@@ -180,24 +129,24 @@ impl Default for Engine {
 }
 
 impl Engine {
-    pub fn cancel_handle(&self) -> Arc<CancelHandle> {
-        self.cancel_handle.clone()
-    }
-
     pub fn reset_stats(&mut self) {
         self.stats = Default::default();
     }
 
     pub fn reset_state(&mut self) {
         self.transposition_table.fill(None);
-        *self
-            .cancel_handle
-            .is_stopped
-            .write()
-            .expect("need to acquire write lock") = false;
     }
 
     pub fn search(&mut self, board: &Board, depth: u32) -> (Option<Board>, Score) {
+        self.cancelable_search(board, depth, &CancelHandle::new().signal())
+    }
+
+    pub fn cancelable_search(
+        &mut self,
+        board: &Board,
+        depth: u32,
+        cancel_handle: &CancelSignal,
+    ) -> (Option<Board>, Score) {
         assert!(depth > 0, "depth should be at least 1");
 
         // Reset stats
@@ -217,6 +166,7 @@ impl Engine {
             .search_inner(
                 board,
                 depth,
+                cancel_handle,
                 false,
                 Score::MinusInfinity,
                 Score::PlusInfinity,
@@ -242,6 +192,7 @@ impl Engine {
         &mut self,
         board: &Board,
         depth: u32,
+        cancel_handle: &CancelSignal,
         allow_null: bool,
         alpha: Score,
         beta: Score,
@@ -250,7 +201,7 @@ impl Engine {
 
         if self.stats.nodes % 1024 == 0 {
             // Check the lock.
-            if self.cancel_handle.is_stopped() {
+            if cancel_handle.is_stopped() {
                 // Stop the thread.
                 return Err(InterruptedError((
                     None,
@@ -294,7 +245,7 @@ impl Engine {
 
         if depth == 0 {
             self.stats.leaves += 1;
-            return Ok((None, self.quiescence(board, alpha, beta)));
+            return Ok((None, self.quiescence(board, cancel_handle, alpha, beta)));
         }
 
         // Null move pruning
@@ -305,6 +256,7 @@ impl Engine {
                 .search_inner(
                     &null_move_board,
                     depth - null_move_depth_reduction - 1,
+                    cancel_handle,
                     false,
                     -beta,
                     -alpha,
@@ -350,7 +302,7 @@ impl Engine {
         let mut search_interrupted = false;
         for b in next_boards {
             let (interrupted, (_, score)) = self
-                .search_inner(&b, depth - 1, true, -beta, -alpha)
+                .search_inner(&b, depth - 1, cancel_handle, true, -beta, -alpha)
                 .unwrap_with_marker();
             let score = -score;
             if score > best_score || best_board.is_none() {
@@ -402,14 +354,21 @@ impl Engine {
         Ok((best_move, best_score))
     }
 
-    fn quiescence(&mut self, board: &Board, alpha: Score, beta: Score) -> Score {
-        self.quiescence_inner(board, alpha, beta)
+    fn quiescence(
+        &mut self,
+        board: &Board,
+        cancel_handle: &CancelSignal,
+        alpha: Score,
+        beta: Score,
+    ) -> Score {
+        self.quiescence_inner(board, cancel_handle, alpha, beta)
             .unwrap_or_partial()
     }
 
     fn quiescence_inner(
         &mut self,
         board: &Board,
+        cancel_handle: &CancelSignal,
         alpha: Score,
         beta: Score,
     ) -> InterruptableResult<Score> {
@@ -428,7 +387,7 @@ impl Engine {
 
         if self.stats.quiescence_nodes % 1024 == 0 {
             // Check the lock.
-            if self.cancel_handle.is_stopped() {
+            if cancel_handle.is_stopped() {
                 // Stop the thread.
                 return Err(InterruptedError(static_eval));
             }
@@ -449,7 +408,7 @@ impl Engine {
 
         for b in next_boards {
             let (interrupted, neg_score) = self
-                .quiescence_inner(&b, -beta, -alpha)
+                .quiescence_inner(&b, cancel_handle, -beta, -alpha)
                 .unwrap_with_marker();
             let score = -neg_score;
             alpha = alpha.max(score);
@@ -476,6 +435,7 @@ mod tests {
         engine::EngineBuilder,
         evaluator::basic::BasicEvaluator,
         score::Score,
+        threading::CancelHandle,
     };
 
     use super::Engine;
@@ -680,30 +640,62 @@ mod tests {
             .with_evaluator(Box::new(BasicEvaluator::new()))
             .build();
 
+        let cancel_handle = CancelHandle::default();
+
         // No captures possible in new setup.
         let board = Board::new_setup();
-        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        let score = engine.quiescence(
+            &board,
+            &cancel_handle.signal(),
+            Score::MinusInfinity,
+            Score::PlusInfinity,
+        );
         assert_eq!(score, Score::Value(0));
 
         // No captures on empty board.
         let board = Board::new();
-        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        let score = engine.quiescence(
+            &board,
+            &cancel_handle.signal(),
+            Score::MinusInfinity,
+            Score::PlusInfinity,
+        );
         assert_eq!(score, Score::Value(0));
 
         let board = Board::try_parse_fen("6k1/4qp1p/6p1/2b5/8/7P/2Q2PP1/2R3K1 w - - 0 1").unwrap();
-        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        let score = engine.quiescence(
+            &board,
+            &cancel_handle.signal(),
+            Score::MinusInfinity,
+            Score::PlusInfinity,
+        );
         assert_eq!(score, Score::Value(500));
 
         let board = Board::try_parse_fen("6k1/4qp1p/6p1/2r5/8/7P/2Q2PP1/2B3K1 w - - 0 1").unwrap();
-        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        let score = engine.quiescence(
+            &board,
+            &cancel_handle.signal(),
+            Score::MinusInfinity,
+            Score::PlusInfinity,
+        );
         assert_eq!(score, Score::Value(-190));
 
         let board = Board::try_parse_fen("6k1/4qp1p/6p1/2r5/8/7P/2Q2PP1/2B3K1 b - - 0 1").unwrap();
-        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        let score = engine.quiescence(
+            &board,
+            &cancel_handle.signal(),
+            Score::MinusInfinity,
+            Score::PlusInfinity,
+        );
         assert_eq!(score, Score::Value(1090));
 
         let board = Board::try_parse_fen("6k1/4qp1p/6p1/2r5/8/7P/2Q2PP1/1B4K1 b - - 0 1").unwrap();
-        let score = engine.quiescence(&board, Score::MinusInfinity, Score::PlusInfinity);
+        let score = engine.quiescence(
+            &board,
+            &cancel_handle.signal(),
+            Score::MinusInfinity,
+            Score::PlusInfinity,
+        );
         assert_eq!(score, Score::Value(590));
     }
 }
