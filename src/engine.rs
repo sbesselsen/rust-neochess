@@ -199,12 +199,8 @@ impl Engine {
     ) -> InterruptableResult<(Option<BoardMove>, Score)> {
         self.stats.nodes += 1;
 
-        if self.stats.nodes % 1024 == 0 {
-            cancel_signal.update_cache();
-        }
-
         // Check the lock.
-        if cancel_signal.is_stopped_cached() {
+        if cancel_signal.is_stopped() {
             // Stop the thread.
             return Err(InterruptedError((
                 None,
@@ -387,11 +383,8 @@ impl Engine {
             return Ok(beta);
         }
 
-        if self.stats.quiescence_nodes % 1024 == 0 {
-            cancel_signal.update_cache();
-        }
         // Check the lock.
-        if cancel_signal.is_stopped_cached() {
+        if cancel_signal.is_stopped() {
             // Stop the thread.
             return Err(InterruptedError(static_eval));
         }
@@ -739,11 +732,10 @@ mod tests {
         .unwrap();
 
         let cancel_handle = CancelHandle::new();
-        let mut cancel_signal = cancel_handle.signal();
+        let cancel_signal = cancel_handle.signal();
 
         thread::spawn(move || {
             sleep(Duration::from_millis(100));
-            eprintln!("Stop");
             cancel_handle.stop();
         });
 

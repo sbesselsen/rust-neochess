@@ -1,26 +1,12 @@
-use std::{
-    cell::RefCell,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 pub struct CancelSignal {
     is_stopped: Arc<RwLock<bool>>,
-    is_stopped_cache: RefCell<bool>,
 }
 
 impl CancelSignal {
     pub fn is_stopped(&self) -> bool {
         *self.is_stopped.read().expect("need to acquire read lock")
-    }
-
-    pub fn is_stopped_cached(&self) -> bool {
-        *self.is_stopped_cache.borrow()
-    }
-
-    pub fn update_cache(&self) {
-        if !self.is_stopped_cached() {
-            *self.is_stopped_cache.borrow_mut() = self.is_stopped()
-        }
     }
 }
 
@@ -42,9 +28,6 @@ impl CancelHandle {
     pub fn signal(&self) -> CancelSignal {
         CancelSignal {
             is_stopped: self.is_stopped.clone(),
-            is_stopped_cache: RefCell::new(
-                *self.is_stopped.read().expect("need to acquire read lock"),
-            ),
         }
     }
 }
