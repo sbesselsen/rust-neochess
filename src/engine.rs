@@ -139,6 +139,7 @@ impl Engine {
 
     pub fn search(&mut self, board: &Board, depth: u32) -> (Option<Board>, Score) {
         self.cancelable_search(board, depth, &CancelHandle::new().signal())
+            .expect("search should not be canceled")
     }
 
     pub fn cancelable_search(
@@ -146,7 +147,7 @@ impl Engine {
         board: &Board,
         depth: u32,
         cancel_signal: &CancelSignal,
-    ) -> (Option<Board>, Score) {
+    ) -> InterruptableResult<(Option<Board>, Score)> {
         assert!(depth > 0, "depth should be at least 1");
 
         // Reset stats
@@ -158,30 +159,33 @@ impl Engine {
             let mv = book_moves[0].board_move;
             if let Ok(board_after_move) = board.apply_board_move(&mv) {
                 // TODO: do something sensible with the score here
-                return (Some(board_after_move), Score::Value(50));
+                return Ok((Some(board_after_move), Score::Value(50)));
             }
         }
 
-        let (mv, score) = self
-            .search_inner(
-                board,
-                depth,
-                cancel_signal,
-                false,
-                Score::MinusInfinity,
-                Score::PlusInfinity,
-            )
-            .unwrap_or_partial();
-        let board_after_move = mv.map(|mv| {
-            board
-                .apply_board_move(&mv)
-                .expect("engine-generated move should be applicable")
-        });
-        if board.active_color == COLOR_WHITE {
-            (board_after_move, score)
-        } else {
-            (board_after_move, -score)
-        }
+        let process_output = |mv: Option<BoardMove>, score: Score| {
+            let board_after_move = mv.map(|mv| {
+                board
+                    .apply_board_move(&mv)
+                    .expect("engine-generated move should be applicable")
+            });
+            if board.active_color == COLOR_WHITE {
+                (board_after_move, score)
+            } else {
+                (board_after_move, -score)
+            }
+        };
+
+        self.search_inner(
+            board,
+            depth,
+            cancel_signal,
+            false,
+            Score::MinusInfinity,
+            Score::PlusInfinity,
+        )
+        .map(|(mv, score)| process_output(mv, score))
+        .map_err(|InterruptedError((mv, score))| InterruptedError(process_output(mv, score)))
     }
 
     pub fn stats(&self) -> EngineStats {
@@ -740,9 +744,10 @@ mod tests {
         });
 
         let mut engine = Engine::default();
-        let (b, _score) = engine.cancelable_search(&board, 400, &cancel_signal);
+        let result = engine.cancelable_search(&board, 400, &cancel_signal);
 
         // The actual test here is whether this terminates with a reasonable value, considering depth = 400...
-        assert!(b.is_some());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().0 .0.is_some());
     }
 }
