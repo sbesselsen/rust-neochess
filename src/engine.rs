@@ -1,4 +1,7 @@
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    sync::{Arc, RwLock},
+};
 
 use crate::{
     board::{board_move::BoardMove, Board, COLOR_WHITE},
@@ -13,8 +16,8 @@ const OPENING_BOOK_WEIGHT_THRESHOLD: u16 = 10;
 #[derive(Default)]
 pub struct EngineBuilder {
     pub transposition_table_index_bits: Option<u8>,
-    pub evaluator: Option<Box<dyn Evaluator>>,
-    pub opening_book: Option<Box<dyn OpeningBook>>,
+    pub evaluator: Option<Box<dyn Evaluator + Send>>,
+    pub opening_book: Option<Box<dyn OpeningBook + Send>>,
 }
 
 impl EngineBuilder {
@@ -22,14 +25,14 @@ impl EngineBuilder {
         Default::default()
     }
 
-    pub fn with_evaluator(self, evaluator: Box<dyn Evaluator>) -> Self {
+    pub fn with_evaluator(self, evaluator: Box<dyn Evaluator + Send>) -> Self {
         Self {
             evaluator: Some(evaluator),
             ..self
         }
     }
 
-    pub fn with_opening_book(self, opening_book: Box<dyn OpeningBook>) -> Self {
+    pub fn with_opening_book(self, opening_book: Box<dyn OpeningBook + Send>) -> Self {
         Self {
             opening_book: Some(opening_book),
             ..self
@@ -66,11 +69,61 @@ struct TranspositionTableEntry {
     best_move: Option<BoardMove>,
 }
 
+pub struct CancelHandle {
+    is_stopped: RwLock<bool>,
+}
+
+impl CancelHandle {
+    fn new() -> Self {
+        CancelHandle {
+            is_stopped: RwLock::new(false),
+        }
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        *self.is_stopped.read().expect("need to acquire read lock")
+    }
+
+    pub fn stop(&self) {
+        *self.is_stopped.write().expect("need to acquire write lock") = true;
+    }
+}
+
+type InterruptableResult<T> = Result<T, InterruptedError<T>>;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct InterruptedError<T>(T);
+
+trait UnwrapOrInterrupt {
+    type Output;
+    fn unwrap_or_partial(self) -> Self::Output;
+    fn unwrap_with_marker(self) -> (bool, Self::Output);
+}
+
+impl<T> UnwrapOrInterrupt for InterruptableResult<T> {
+    type Output = T;
+
+    fn unwrap_or_partial(self) -> Self::Output {
+        match self {
+            Ok(v) => v,
+            Err(InterruptedError(v)) => v,
+        }
+    }
+
+    fn unwrap_with_marker(self) -> (bool, Self::Output) {
+        match self {
+            Ok(v) => (false, v),
+            Err(InterruptedError(v)) => (true, v),
+        }
+    }
+}
+
 pub struct Engine {
-    evaluator: Box<dyn Evaluator>,
-    opening_book: Box<dyn OpeningBook>,
+    evaluator: Box<dyn Evaluator + Send>,
+    opening_book: Box<dyn OpeningBook + Send>,
     transposition_table: Vec<Option<TranspositionTableEntry>>,
     transposition_table_index_bits: u8,
+    cancel_handle: Arc<CancelHandle>,
     stats: EngineStats,
 }
 
@@ -110,6 +163,7 @@ impl From<EngineBuilder> for Engine {
         transposition_table.resize(transposition_table_size, None);
 
         Engine {
+            cancel_handle: Arc::new(CancelHandle::new()),
             evaluator,
             opening_book,
             transposition_table,
@@ -126,12 +180,21 @@ impl Default for Engine {
 }
 
 impl Engine {
+    pub fn cancel_handle(&self) -> Arc<CancelHandle> {
+        self.cancel_handle.clone()
+    }
+
     pub fn reset_stats(&mut self) {
         self.stats = Default::default();
     }
 
     pub fn reset_state(&mut self) {
         self.transposition_table.fill(None);
+        *self
+            .cancel_handle
+            .is_stopped
+            .write()
+            .expect("need to acquire write lock") = false;
     }
 
     pub fn search(&mut self, board: &Board, depth: u32) -> (Option<Board>, Score) {
@@ -150,13 +213,15 @@ impl Engine {
             }
         }
 
-        let (mv, score) = self.search_inner(
-            board,
-            depth,
-            false,
-            Score::MinusInfinity,
-            Score::PlusInfinity,
-        );
+        let (mv, score) = self
+            .search_inner(
+                board,
+                depth,
+                false,
+                Score::MinusInfinity,
+                Score::PlusInfinity,
+            )
+            .unwrap_or_partial();
         let board_after_move = mv.map(|mv| {
             board
                 .apply_board_move(&mv)
@@ -180,8 +245,19 @@ impl Engine {
         allow_null: bool,
         alpha: Score,
         beta: Score,
-    ) -> (Option<BoardMove>, Score) {
+    ) -> InterruptableResult<(Option<BoardMove>, Score)> {
         self.stats.nodes += 1;
+
+        if self.stats.nodes % 1024 == 0 {
+            // Check the lock.
+            if self.cancel_handle.is_stopped() {
+                // Stop the thread.
+                return Err(InterruptedError((
+                    None,
+                    self.evaluator.evaluate(board, board.active_color),
+                )));
+            }
+        }
 
         let alpha_orig = alpha;
         let mut alpha = alpha;
@@ -197,7 +273,7 @@ impl Engine {
                 match entry.bound {
                     TranspositionTableBound::Exact => {
                         // We know the exact score. We can return it!
-                        return (entry.best_move, entry.score);
+                        return Ok((entry.best_move, entry.score));
                     }
                     TranspositionTableBound::Lower => {
                         // We know a lower bound for this board.
@@ -211,31 +287,36 @@ impl Engine {
                     }
                 }
                 if alpha >= beta {
-                    return (entry.best_move, entry.score);
+                    return Ok((entry.best_move, entry.score));
                 }
             }
         }
 
         if depth == 0 {
             self.stats.leaves += 1;
-            return (None, self.quiescence(board, alpha, beta));
+            return Ok((None, self.quiescence(board, alpha, beta)));
         }
 
         // Null move pruning
         let null_move_depth_reduction = 2;
         if allow_null && depth > null_move_depth_reduction + 1 && !board.is_check() {
             let null_move_board = board.apply_mutation(|_| {});
-            let (_, null_move_score) = self.search_inner(
-                &null_move_board,
-                depth - null_move_depth_reduction - 1,
-                false,
-                -beta,
-                -alpha,
-            );
+            let (interrupted, (_, null_move_score)) = self
+                .search_inner(
+                    &null_move_board,
+                    depth - null_move_depth_reduction - 1,
+                    false,
+                    -beta,
+                    -alpha,
+                )
+                .unwrap_with_marker();
             let null_move_score = -null_move_score;
             if null_move_score >= beta {
                 // Null move pruning
-                return (None, beta);
+                return Ok((None, beta));
+            }
+            if interrupted {
+                return Err(InterruptedError((None, beta)));
             }
         }
 
@@ -260,19 +341,26 @@ impl Engine {
             } else {
                 Score::Value(0)
             };
-            return (None, score);
+            return Ok((None, score));
         }
 
         let mut best_board: Option<Board> = None;
         let mut best_score = Score::MinusInfinity;
 
+        let mut search_interrupted = false;
         for b in next_boards {
-            let (_, score) = self.search_inner(&b, depth - 1, true, -beta, -alpha);
+            let (interrupted, (_, score)) = self
+                .search_inner(&b, depth - 1, true, -beta, -alpha)
+                .unwrap_with_marker();
             let score = -score;
             if score > best_score || best_board.is_none() {
                 best_board = Some(b);
                 best_score = score;
                 alpha = alpha.max(score);
+            }
+            if interrupted {
+                search_interrupted = true;
+                break;
             }
             if alpha >= beta {
                 // Cutoff: best score for the current player is better than the best guaranteed score for the other player.
@@ -284,6 +372,11 @@ impl Engine {
             }
         }
 
+        let best_move = best_board.and_then(|b| b.as_board_move(board));
+        if search_interrupted {
+            return Err(InterruptedError((best_move, best_score)));
+        }
+
         // Add to transposition table.
         let bound = if best_score <= alpha_orig {
             TranspositionTableBound::Upper
@@ -292,12 +385,6 @@ impl Engine {
         } else {
             TranspositionTableBound::Exact
         };
-        let best_move = if let Some(best_board) = &best_board {
-            best_board.as_board_move(board)
-        } else {
-            None
-        };
-
         if self.transposition_table[tt_index]
             .map(|e| e.zobrist_hash != board.zobrist_hash || e.depth <= depth)
             .unwrap_or(true)
@@ -312,10 +399,20 @@ impl Engine {
             });
         }
 
-        (best_move, best_score)
+        Ok((best_move, best_score))
     }
 
     fn quiescence(&mut self, board: &Board, alpha: Score, beta: Score) -> Score {
+        self.quiescence_inner(board, alpha, beta)
+            .unwrap_or_partial()
+    }
+
+    fn quiescence_inner(
+        &mut self,
+        board: &Board,
+        alpha: Score,
+        beta: Score,
+    ) -> InterruptableResult<Score> {
         self.stats.quiescence_nodes += 1;
 
         let mut alpha = alpha;
@@ -326,7 +423,15 @@ impl Engine {
         let static_eval = self.evaluator.evaluate(board, board.active_color);
         alpha = alpha.max(static_eval);
         if static_eval >= beta {
-            return beta;
+            return Ok(beta);
+        }
+
+        if self.stats.quiescence_nodes % 1024 == 0 {
+            // Check the lock.
+            if self.cancel_handle.is_stopped() {
+                // Stop the thread.
+                return Err(InterruptedError(static_eval));
+            }
         }
 
         // Keep captures only.
@@ -337,20 +442,26 @@ impl Engine {
         });
 
         if next_boards.is_empty() {
-            return static_eval;
+            return Ok(static_eval);
         }
 
         next_boards.sort_by_cached_key(|b| self.evaluator.evaluate_move_by_board(board, b));
 
         for b in next_boards {
-            let score = -self.quiescence(&b, -beta, -alpha);
+            let (interrupted, neg_score) = self
+                .quiescence_inner(&b, -beta, -alpha)
+                .unwrap_with_marker();
+            let score = -neg_score;
             alpha = alpha.max(score);
+            if interrupted {
+                return Err(InterruptedError(alpha));
+            }
             if alpha >= beta {
                 break;
             }
         }
 
-        alpha
+        Ok(alpha)
     }
 }
 
