@@ -38,31 +38,7 @@ impl Default for CancelHandle {
     }
 }
 
-pub type InterruptableResult<T> = Result<T, InterruptedError<T>>;
+pub type InterruptableResult<T> = Result<T, InterruptedError>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct InterruptedError<T>(pub T);
-
-pub trait UnwrapOrInterrupt {
-    type Output;
-    fn unwrap_or_partial(self) -> Self::Output;
-    fn unwrap_with_marker(self) -> (bool, Self::Output);
-}
-
-impl<T> UnwrapOrInterrupt for InterruptableResult<T> {
-    type Output = T;
-
-    fn unwrap_or_partial(self) -> Self::Output {
-        match self {
-            Ok(v) => v,
-            Err(InterruptedError(v)) => v,
-        }
-    }
-
-    fn unwrap_with_marker(self) -> (bool, Self::Output) {
-        match self {
-            Ok(v) => (false, v),
-            Err(InterruptedError(v)) => (true, v),
-        }
-    }
-}
+pub struct InterruptedError;

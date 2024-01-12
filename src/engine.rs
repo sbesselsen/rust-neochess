@@ -5,9 +5,7 @@ use crate::{
     book::{EmptyOpeningBook, OpeningBook},
     evaluator::{pesto::PestoEvaluator, Evaluator},
     score::Score,
-    threading::{
-        CancelHandle, CancelSignal, InterruptableResult, InterruptedError, UnwrapOrInterrupt,
-    },
+    threading::{CancelHandle, CancelSignal, InterruptableResult, InterruptedError},
 };
 
 // TODO: do something sensible with this
@@ -164,29 +162,23 @@ impl Engine {
             }
         }
 
-        let process_output = |mv: Option<BoardMove>, score: Score| {
-            let board_after_move = mv.map(|mv| {
-                board
-                    .apply_board_move(&mv)
-                    .expect("engine-generated move should be applicable")
-            });
-            if board.active_color == COLOR_WHITE {
-                (board_after_move, score)
-            } else {
-                (board_after_move, -score)
-            }
-        };
-
-        self.search_inner(
+        let (mv, score) = self.search_inner(
             board,
             depth,
             cancel_signal,
             false,
             Score::MinusInfinity,
             Score::PlusInfinity,
-        )
-        .map(|(mv, score)| process_output(mv, score))
-        .map_err(|InterruptedError((mv, score))| InterruptedError(process_output(mv, score)))
+        )?;
+
+        Ok((
+            mv.and_then(|mv| board.apply_board_move(&mv).ok()),
+            if board.active_color == COLOR_WHITE {
+                score
+            } else {
+                -score
+            },
+        ))
     }
 
     pub fn stats(&self) -> EngineStats {
@@ -207,10 +199,7 @@ impl Engine {
         // Check the lock.
         if cancel_signal.is_stopped() {
             // Stop the thread.
-            return Err(InterruptedError((
-                None,
-                self.evaluator.evaluate(board, board.active_color),
-            )));
+            return Err(InterruptedError);
         }
 
         let alpha_orig = alpha;
@@ -248,30 +237,25 @@ impl Engine {
 
         if depth == 0 {
             self.stats.leaves += 1;
-            return Ok((None, self.quiescence(board, cancel_signal, alpha, beta)));
+            return Ok((None, self.quiescence(board, cancel_signal, alpha, beta)?));
         }
 
         // Null move pruning
         let null_move_depth_reduction = 2;
         if allow_null && depth > null_move_depth_reduction + 1 && !board.is_check() {
             let null_move_board = board.apply_mutation(|_| {});
-            let (interrupted, (_, null_move_score)) = self
-                .search_inner(
-                    &null_move_board,
-                    depth - null_move_depth_reduction - 1,
-                    cancel_signal,
-                    false,
-                    -beta,
-                    -alpha,
-                )
-                .unwrap_with_marker();
+            let (_, null_move_score) = self.search_inner(
+                &null_move_board,
+                depth - null_move_depth_reduction - 1,
+                cancel_signal,
+                false,
+                -beta,
+                -alpha,
+            )?;
             let null_move_score = -null_move_score;
             if null_move_score >= beta {
                 // Null move pruning
                 return Ok((None, beta));
-            }
-            if interrupted {
-                return Err(InterruptedError((None, beta)));
             }
         }
 
@@ -302,31 +286,26 @@ impl Engine {
         let mut best_board: Option<Board> = None;
         let mut best_score = Score::MinusInfinity;
 
-        let mut search_interrupted = false;
         for (index, b) in next_boards.into_iter().enumerate() {
             let is_first = index == 0;
-            let (interrupted, (_, score)) = if is_first {
-                self.search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)
-                    .unwrap_with_marker()
+            let (_, score) = if is_first {
+                self.search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)?
             } else {
                 // Search with null window
-                let (interrupted, (mv, score)) = self
-                    .search_inner(
-                        &b,
-                        depth - 1,
-                        cancel_signal,
-                        true,
-                        -alpha - Score::Value(1),
-                        -alpha,
-                    )
-                    .unwrap_with_marker();
-                if !interrupted && alpha < -score && -score < beta {
+                let (mv, score) = self.search_inner(
+                    &b,
+                    depth - 1,
+                    cancel_signal,
+                    true,
+                    -alpha - Score::Value(1),
+                    -alpha,
+                )?;
+                if alpha < -score && -score < beta {
                     // Fail high
                     // Re-search
-                    self.search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)
-                        .unwrap_with_marker()
+                    self.search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)?
                 } else {
-                    (interrupted, (mv, score))
+                    (mv, score)
                 }
             };
             let score = -score;
@@ -334,10 +313,6 @@ impl Engine {
                 best_board = Some(b);
                 best_score = score;
                 alpha = alpha.max(score);
-            }
-            if interrupted {
-                search_interrupted = true;
-                break;
             }
             if alpha >= beta {
                 // Cutoff: best score for the current player is better than the best guaranteed score for the other player.
@@ -350,9 +325,6 @@ impl Engine {
         }
 
         let best_move = best_board.and_then(|b| b.as_board_move(board));
-        if search_interrupted {
-            return Err(InterruptedError((best_move, best_score)));
-        }
 
         // Add to transposition table.
         let bound = if best_score <= alpha_orig {
@@ -384,17 +356,6 @@ impl Engine {
         cancel_signal: &CancelSignal,
         alpha: Score,
         beta: Score,
-    ) -> Score {
-        self.quiescence_inner(board, cancel_signal, alpha, beta)
-            .unwrap_or_partial()
-    }
-
-    fn quiescence_inner(
-        &mut self,
-        board: &Board,
-        cancel_signal: &CancelSignal,
-        alpha: Score,
-        beta: Score,
     ) -> InterruptableResult<Score> {
         self.stats.quiescence_nodes += 1;
 
@@ -412,7 +373,7 @@ impl Engine {
         // Check the lock.
         if cancel_signal.is_stopped() {
             // Stop the thread.
-            return Err(InterruptedError(static_eval));
+            return Err(InterruptedError);
         }
 
         // Keep captures only.
@@ -429,14 +390,8 @@ impl Engine {
         next_boards.sort_by_cached_key(|b| self.evaluator.evaluate_move_by_board(board, b));
 
         for b in next_boards {
-            let (interrupted, neg_score) = self
-                .quiescence_inner(&b, cancel_signal, -beta, -alpha)
-                .unwrap_with_marker();
-            let score = -neg_score;
+            let score = -self.quiescence(&b, cancel_signal, -beta, -alpha)?;
             alpha = alpha.max(score);
-            if interrupted {
-                return Err(InterruptedError(alpha));
-            }
             if alpha >= beta {
                 break;
             }
@@ -461,7 +416,7 @@ mod tests {
         engine::EngineBuilder,
         evaluator::basic::BasicEvaluator,
         score::Score,
-        threading::CancelHandle,
+        threading::{CancelHandle, InterruptedError},
     };
 
     use super::Engine;
@@ -676,7 +631,7 @@ mod tests {
             Score::MinusInfinity,
             Score::PlusInfinity,
         );
-        assert_eq!(score, Score::Value(0));
+        assert_eq!(score, Ok(Score::Value(0)));
 
         // No captures on empty board.
         let board = Board::new();
@@ -686,7 +641,7 @@ mod tests {
             Score::MinusInfinity,
             Score::PlusInfinity,
         );
-        assert_eq!(score, Score::Value(0));
+        assert_eq!(score, Ok(Score::Value(0)));
 
         let board = Board::try_parse_fen("6k1/4qp1p/6p1/2b5/8/7P/2Q2PP1/2R3K1 w - - 0 1").unwrap();
         let score = engine.quiescence(
@@ -695,7 +650,7 @@ mod tests {
             Score::MinusInfinity,
             Score::PlusInfinity,
         );
-        assert_eq!(score, Score::Value(500));
+        assert_eq!(score, Ok(Score::Value(500)));
 
         let board = Board::try_parse_fen("6k1/4qp1p/6p1/2r5/8/7P/2Q2PP1/2B3K1 w - - 0 1").unwrap();
         let score = engine.quiescence(
@@ -704,7 +659,7 @@ mod tests {
             Score::MinusInfinity,
             Score::PlusInfinity,
         );
-        assert_eq!(score, Score::Value(-190));
+        assert_eq!(score, Ok(Score::Value(-190)));
 
         let board = Board::try_parse_fen("6k1/4qp1p/6p1/2r5/8/7P/2Q2PP1/2B3K1 b - - 0 1").unwrap();
         let score = engine.quiescence(
@@ -713,7 +668,7 @@ mod tests {
             Score::MinusInfinity,
             Score::PlusInfinity,
         );
-        assert_eq!(score, Score::Value(1090));
+        assert_eq!(score, Ok(Score::Value(1090)));
 
         let board = Board::try_parse_fen("6k1/4qp1p/6p1/2r5/8/7P/2Q2PP1/1B4K1 b - - 0 1").unwrap();
         let score = engine.quiescence(
@@ -722,7 +677,7 @@ mod tests {
             Score::MinusInfinity,
             Score::PlusInfinity,
         );
-        assert_eq!(score, Score::Value(590));
+        assert_eq!(score, Ok(Score::Value(590)));
     }
 
     #[test]
@@ -769,7 +724,6 @@ mod tests {
         let result = engine.cancelable_search(&board, 400, &cancel_signal);
 
         // The actual test here is whether this terminates with a reasonable value, considering depth = 400...
-        assert!(result.is_err());
-        assert!(result.unwrap_err().0 .0.is_some());
+        assert_eq!(result, Err(InterruptedError));
     }
 }
