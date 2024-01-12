@@ -145,7 +145,7 @@ impl Engine {
         &mut self,
         board: &Board,
         depth: u32,
-        cancel_handle: &CancelSignal,
+        cancel_signal: &CancelSignal,
     ) -> (Option<Board>, Score) {
         assert!(depth > 0, "depth should be at least 1");
 
@@ -166,7 +166,7 @@ impl Engine {
             .search_inner(
                 board,
                 depth,
-                cancel_handle,
+                cancel_signal,
                 false,
                 Score::MinusInfinity,
                 Score::PlusInfinity,
@@ -192,7 +192,7 @@ impl Engine {
         &mut self,
         board: &Board,
         depth: u32,
-        cancel_handle: &CancelSignal,
+        cancel_signal: &CancelSignal,
         allow_null: bool,
         alpha: Score,
         beta: Score,
@@ -200,14 +200,16 @@ impl Engine {
         self.stats.nodes += 1;
 
         if self.stats.nodes % 1024 == 0 {
-            // Check the lock.
-            if cancel_handle.is_stopped() {
-                // Stop the thread.
-                return Err(InterruptedError((
-                    None,
-                    self.evaluator.evaluate(board, board.active_color),
-                )));
-            }
+            cancel_signal.update_cache();
+        }
+
+        // Check the lock.
+        if cancel_signal.is_stopped_cached() {
+            // Stop the thread.
+            return Err(InterruptedError((
+                None,
+                self.evaluator.evaluate(board, board.active_color),
+            )));
         }
 
         let alpha_orig = alpha;
@@ -245,7 +247,7 @@ impl Engine {
 
         if depth == 0 {
             self.stats.leaves += 1;
-            return Ok((None, self.quiescence(board, cancel_handle, alpha, beta)));
+            return Ok((None, self.quiescence(board, cancel_signal, alpha, beta)));
         }
 
         // Null move pruning
@@ -256,7 +258,7 @@ impl Engine {
                 .search_inner(
                     &null_move_board,
                     depth - null_move_depth_reduction - 1,
-                    cancel_handle,
+                    cancel_signal,
                     false,
                     -beta,
                     -alpha,
@@ -302,7 +304,7 @@ impl Engine {
         let mut search_interrupted = false;
         for b in next_boards {
             let (interrupted, (_, score)) = self
-                .search_inner(&b, depth - 1, cancel_handle, true, -beta, -alpha)
+                .search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)
                 .unwrap_with_marker();
             let score = -score;
             if score > best_score || best_board.is_none() {
@@ -357,18 +359,18 @@ impl Engine {
     fn quiescence(
         &mut self,
         board: &Board,
-        cancel_handle: &CancelSignal,
+        cancel_signal: &CancelSignal,
         alpha: Score,
         beta: Score,
     ) -> Score {
-        self.quiescence_inner(board, cancel_handle, alpha, beta)
+        self.quiescence_inner(board, cancel_signal, alpha, beta)
             .unwrap_or_partial()
     }
 
     fn quiescence_inner(
         &mut self,
         board: &Board,
-        cancel_handle: &CancelSignal,
+        cancel_signal: &CancelSignal,
         alpha: Score,
         beta: Score,
     ) -> InterruptableResult<Score> {
@@ -386,11 +388,12 @@ impl Engine {
         }
 
         if self.stats.quiescence_nodes % 1024 == 0 {
-            // Check the lock.
-            if cancel_handle.is_stopped() {
-                // Stop the thread.
-                return Err(InterruptedError(static_eval));
-            }
+            cancel_signal.update_cache();
+        }
+        // Check the lock.
+        if cancel_signal.is_stopped_cached() {
+            // Stop the thread.
+            return Err(InterruptedError(static_eval));
         }
 
         // Keep captures only.
@@ -408,7 +411,7 @@ impl Engine {
 
         for b in next_boards {
             let (interrupted, neg_score) = self
-                .quiescence_inner(&b, cancel_handle, -beta, -alpha)
+                .quiescence_inner(&b, cancel_signal, -beta, -alpha)
                 .unwrap_with_marker();
             let score = -neg_score;
             alpha = alpha.max(score);
@@ -426,7 +429,11 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
+    use std::{
+        env,
+        thread::{self, sleep},
+        time::Duration,
+    };
 
     use crate::{
         bitwise_helper::BitwiseHelper,
@@ -697,5 +704,53 @@ mod tests {
             Score::PlusInfinity,
         );
         assert_eq!(score, Score::Value(590));
+    }
+
+    #[test]
+    fn threading() {
+        let board = Board::try_parse_fen(
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0",
+        )
+        .unwrap();
+
+        let handles: Vec<_> = (0..6)
+            .map(|_| {
+                let board = board.clone();
+
+                thread::spawn(move || {
+                    let mut engine = Engine::default();
+                    let (b, _score) = engine.search(&board, 4);
+                    b
+                })
+            })
+            .collect();
+
+        for h in handles {
+            let b = h.join().unwrap().unwrap();
+            assert_eq!(b.as_move_string(&board), Some(String::from("dxe6")));
+        }
+    }
+
+    #[test]
+    fn cancelable_threading() {
+        let board = Board::try_parse_fen(
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0",
+        )
+        .unwrap();
+
+        let cancel_handle = CancelHandle::new();
+        let mut cancel_signal = cancel_handle.signal();
+
+        thread::spawn(move || {
+            sleep(Duration::from_millis(100));
+            eprintln!("Stop");
+            cancel_handle.stop();
+        });
+
+        let mut engine = Engine::default();
+        let (b, _score) = engine.cancelable_search(&board, 400, &cancel_signal);
+
+        // The actual test here is whether this terminates with a reasonable value, considering depth = 400...
+        assert!(b.is_some());
     }
 }
