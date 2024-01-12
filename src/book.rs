@@ -190,7 +190,7 @@ mod tests {
         }
         let book = get_polygot_book(&opening_book_path.expect("OPENING_BOOK must be set"));
         let entries = book.find(0x463b96181691fc9c);
-        assert!(entries.len() > 0);
+        assert!(!entries.is_empty());
         // First entry should be King's pawn
         assert_eq!(entries[0].board_move.from_index, 52);
         assert_eq!(entries[0].board_move.to_index, 36);
