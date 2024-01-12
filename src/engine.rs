@@ -341,8 +341,7 @@ impl Engine {
             TranspositionTableBound::Exact
         };
         if self.transposition_table[tt_index]
-            .map(|e| e.zobrist_hash != board.zobrist_hash || e.depth <= depth)
-            .unwrap_or(true)
+            .map_or(true, |e| e.bound != TranspositionTableBound::Exact)
         {
             // There is no entry in the table for this board, or it is worse in depth than what we have.
             self.transposition_table[tt_index].replace(TranspositionTableEntry {
