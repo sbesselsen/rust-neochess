@@ -1,5 +1,9 @@
 use crate::board::{COLOR_BLACK, COLOR_WHITE};
-use std::{cmp::Ordering, fmt::Display, ops::Neg};
+use std::{
+    cmp::Ordering,
+    fmt::Display,
+    ops::{Add, Neg, Sub},
+};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Score {
@@ -19,6 +23,30 @@ impl Score {
             Score::MinusInfinity => color == COLOR_BLACK,
             _ => false,
         }
+    }
+}
+
+impl Add for Score {
+    type Output = Score;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match self {
+            Score::PlusInfinity => self,
+            Score::MinusInfinity => self,
+            Score::Value(v) => match rhs {
+                Score::PlusInfinity => rhs,
+                Score::MinusInfinity => rhs,
+                Score::Value(vr) => Score::Value(v + vr),
+            },
+        }
+    }
+}
+
+impl Sub for Score {
+    type Output = Score;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.add(-rhs)
     }
 }
 
