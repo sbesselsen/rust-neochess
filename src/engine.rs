@@ -303,10 +303,32 @@ impl Engine {
         let mut best_score = Score::MinusInfinity;
 
         let mut search_interrupted = false;
-        for b in next_boards {
-            let (interrupted, (_, score)) = self
-                .search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)
-                .unwrap_with_marker();
+        for (index, b) in next_boards.into_iter().enumerate() {
+            let is_first = index == 0;
+            let (interrupted, (_, score)) = if is_first {
+                self.search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)
+                    .unwrap_with_marker()
+            } else {
+                // Search with null window
+                let (interrupted, (mv, score)) = self
+                    .search_inner(
+                        &b,
+                        depth - 1,
+                        cancel_signal,
+                        true,
+                        -alpha - Score::Value(1),
+                        -alpha,
+                    )
+                    .unwrap_with_marker();
+                if !interrupted && alpha < -score && -score < beta {
+                    // Fail high
+                    // Re-search
+                    self.search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)
+                        .unwrap_with_marker()
+                } else {
+                    (interrupted, (mv, score))
+                }
+            };
             let score = -score;
             if score > best_score || best_board.is_none() {
                 best_board = Some(b);
