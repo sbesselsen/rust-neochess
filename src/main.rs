@@ -1,21 +1,28 @@
-use neochess::{board::Board, book::PolyglotOpeningBook, engine::EngineBuilder};
+use neochess::{
+    board::Board, book::PolyglotOpeningBook, engine::EngineBuilder, threading::CancelHandle,
+};
 use std::{
     env,
     io::{stdin, BufRead},
+    thread,
 };
 
 fn main() {
-    let depth = 6;
+    let first_move_depth = 6;
 
-    let mut engine_builder = EngineBuilder::new();
+    let create_engine = || {
+        let mut engine_builder = EngineBuilder::new();
 
-    if let Ok(opening_book_path) = env::var("OPENING_BOOK") {
-        let opening_book = PolyglotOpeningBook::read(opening_book_path)
-            .expect("should be able to read opening book");
-        engine_builder = engine_builder.with_opening_book(Box::new(opening_book));
-    }
+        if let Ok(opening_book_path) = env::var("OPENING_BOOK") {
+            let opening_book = PolyglotOpeningBook::read(opening_book_path)
+                .expect("should be able to read opening book");
+            engine_builder = engine_builder.with_opening_book(Box::new(opening_book));
+        }
 
-    let mut engine = engine_builder.build();
+        engine_builder.build()
+    };
+
+    let mut engine = create_engine();
     let mut board = Board::new_setup();
 
     let input = read_option("Play as (w/b/fen): ", vec!["w", "b", "fen"]);
@@ -29,7 +36,7 @@ fn main() {
                 }
                 Ok(b) => {
                     board = b;
-                    let (b, _) = engine.search(&board, depth);
+                    let (b, _) = engine.search(&board, first_move_depth);
                     match b {
                         None => {
                             println!("No move found");
@@ -49,7 +56,7 @@ fn main() {
             }
         },
         "b" => {
-            let (b, _) = engine.search(&board, depth);
+            let (b, _) = engine.search(&board, first_move_depth);
             let b = b.expect("first move should always yield a board");
             println!(
                 "My move: {}",
@@ -90,7 +97,44 @@ fn main() {
             .find(|(m, _)| m == &mv)
             .expect("read_option must have provided a valid option");
 
-        let (engine_move_board, _) = engine.search(&player_move_board, depth);
+        let cancel_handle = CancelHandle::new();
+        let cancel_signal = cancel_handle.signal();
+        let search_board = player_move_board.clone();
+
+        let mut engine = create_engine();
+        let calc_thread = thread::spawn(move || {
+            let mut move_board: Option<Board> = None;
+
+            for depth in 4..100 {
+                let result = engine.cancelable_search(&search_board, depth, &cancel_signal);
+                match result {
+                    Ok((b, score)) => match b {
+                        None => {
+                            println!("    Out of moves");
+                            return None;
+                        }
+                        Some(b) => {
+                            move_board = Some(b.clone());
+                            println!(
+                                "    Thinking of: {} ({} @ {})",
+                                b.as_move_string(&search_board)
+                                    .expect("engine move must be valid"),
+                                score,
+                                depth
+                            );
+                        }
+                    },
+                    Err(_) => {
+                        break;
+                    }
+                }
+            }
+            move_board
+        });
+        read_line("    Press Enter to stop the engine...");
+        cancel_handle.stop();
+        let engine_move_board = calc_thread.join().unwrap();
+
         if let Some(b) = engine_move_board {
             board = b;
             println!(
