@@ -1,15 +1,10 @@
-use crate::board::{COLOR_BLACK, COLOR_WHITE};
-use std::{
-    cmp::Ordering,
-    fmt::Display,
-    ops::{Add, Neg, Sub},
-};
+use std::{cmp::Ordering, fmt::Display, ops::Neg};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Score {
-    MinusInfinity,
+    WinIn(u32),
     Value(i32),
-    PlusInfinity,
+    LossIn(u32),
 }
 
 impl Score {
@@ -17,36 +12,11 @@ impl Score {
         matches!(self, Score::Value(_))
     }
 
-    pub fn is_win(&self, color: usize) -> bool {
+    pub fn add_value(self, value: i32) -> Score {
         match self {
-            Score::PlusInfinity => color == COLOR_WHITE,
-            Score::MinusInfinity => color == COLOR_BLACK,
-            _ => false,
+            Score::Value(v) => Score::Value(v + value),
+            _ => self,
         }
-    }
-}
-
-impl Add for Score {
-    type Output = Score;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        match self {
-            Score::PlusInfinity => self,
-            Score::MinusInfinity => self,
-            Score::Value(v) => match rhs {
-                Score::PlusInfinity => rhs,
-                Score::MinusInfinity => rhs,
-                Score::Value(vr) => Score::Value(v + vr),
-            },
-        }
-    }
-}
-
-impl Sub for Score {
-    type Output = Score;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        self.add(-rhs)
     }
 }
 
@@ -55,8 +25,8 @@ impl Neg for Score {
 
     fn neg(self) -> Self::Output {
         match self {
-            Score::MinusInfinity => Score::PlusInfinity,
-            Score::PlusInfinity => Score::MinusInfinity,
+            Score::WinIn(n) => Score::LossIn(n),
+            Score::LossIn(n) => Score::WinIn(n),
             Score::Value(v) => Score::Value(-v),
         }
     }
@@ -69,11 +39,13 @@ impl std::hash::Hash for Score {
                 state.write_u8(0);
                 state.write_i32(*x);
             }
-            Score::MinusInfinity => {
+            Score::WinIn(n) => {
                 state.write_u8(1);
+                state.write_u32(*n);
             }
-            Score::PlusInfinity => {
+            Score::LossIn(n) => {
                 state.write_u8(2);
+                state.write_u32(*n);
             }
         }
         state.finish();
@@ -92,13 +64,13 @@ impl Ord for Score {
             return Ordering::Equal;
         }
         match (self, other) {
-            (Score::MinusInfinity, Score::MinusInfinity) => Ordering::Equal,
-            (Score::MinusInfinity, _) => Ordering::Less,
-            (_, Score::MinusInfinity) => Ordering::Greater,
-            (Score::PlusInfinity, Score::PlusInfinity) => Ordering::Equal,
-            (Score::PlusInfinity, _) => Ordering::Greater,
-            (_, Score::PlusInfinity) => Ordering::Less,
+            (Score::WinIn(a), Score::WinIn(b)) => b.cmp(a),
+            (Score::WinIn(_), _) => Ordering::Greater,
+            (Score::LossIn(a), Score::LossIn(b)) => a.cmp(b),
+            (Score::LossIn(_), _) => Ordering::Less,
             (Score::Value(x), Score::Value(y)) => x.cmp(y),
+            (Score::Value(_), Score::LossIn(_)) => Ordering::Greater,
+            (Score::Value(_), Score::WinIn(_)) => Ordering::Less,
         }
     }
 }
@@ -106,8 +78,8 @@ impl Ord for Score {
 impl Display for Score {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Score::MinusInfinity => f.write_str("-Infinity"),
-            Score::PlusInfinity => f.write_str("+Infinity"),
+            Score::WinIn(n) => f.write_fmt(format_args!("#{}", n)),
+            Score::LossIn(n) => f.write_fmt(format_args!("#-{}", n)),
             Score::Value(x) => f.write_fmt(format_args!("{}", x)),
         }
     }
@@ -115,34 +87,28 @@ impl Display for Score {
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
-
     use crate::score::Score;
 
     #[test]
     fn score_compare() {
-        assert_eq!(
-            Score::PlusInfinity.cmp(&Score::Value(100)),
-            Ordering::Greater
-        );
-        assert_eq!(Score::MinusInfinity.cmp(&Score::Value(100)), Ordering::Less);
-        assert_eq!(
-            Score::PlusInfinity.cmp(&Score::PlusInfinity),
-            Ordering::Equal
-        );
-        assert_eq!(Score::Value(100).cmp(&Score::Value(50)), Ordering::Greater);
+        assert!(Score::WinIn(5) > Score::WinIn(6));
+        assert!(Score::WinIn(5) <= Score::WinIn(5));
+        assert!(Score::WinIn(3) > Score::Value(1_000_000));
+        assert!(Score::WinIn(3) > Score::LossIn(10));
+        assert!(Score::Value(3) > Score::Value(2));
     }
 
     #[test]
     fn score_neg() {
-        assert_eq!(-Score::MinusInfinity, Score::PlusInfinity);
-        assert_eq!(-Score::PlusInfinity, Score::MinusInfinity);
+        assert_eq!(-Score::WinIn(5), Score::LossIn(5));
+        assert_eq!(-Score::LossIn(0), Score::WinIn(0));
         assert_eq!(-Score::Value(100), Score::Value(-100));
     }
 
     #[test]
     fn score_finite() {
-        assert!(!Score::MinusInfinity.is_finite());
+        assert!(!Score::WinIn(3).is_finite());
+        assert!(!Score::LossIn(3).is_finite());
         assert!(Score::Value(0).is_finite());
     }
 }

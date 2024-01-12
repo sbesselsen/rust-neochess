@@ -167,8 +167,8 @@ impl Engine {
             depth,
             cancel_signal,
             false,
-            Score::MinusInfinity,
-            Score::PlusInfinity,
+            Score::LossIn(0),
+            Score::WinIn(0),
         )?;
 
         Ok((
@@ -276,7 +276,7 @@ impl Engine {
 
         if next_boards.is_empty() {
             let score = if board.is_check() {
-                Score::MinusInfinity
+                Score::LossIn(0)
             } else {
                 Score::Value(0)
             };
@@ -284,7 +284,7 @@ impl Engine {
         }
 
         let mut best_board: Option<Board> = None;
-        let mut best_score = Score::MinusInfinity;
+        let mut best_score = Score::LossIn(0);
 
         for (index, b) in next_boards.into_iter().enumerate() {
             let is_first = index == 0;
@@ -297,7 +297,7 @@ impl Engine {
                     depth - 1,
                     cancel_signal,
                     true,
-                    -alpha - Score::Value(1),
+                    (-alpha).add_value(-1),
                     -alpha,
                 )?;
                 if alpha < -score && -score < beta {
@@ -323,6 +323,8 @@ impl Engine {
                 break;
             }
         }
+
+        // TODO: if our score in mate in X, add 1 to that
 
         let best_move = best_board.and_then(|b| b.as_board_move(board));
 
@@ -437,7 +439,7 @@ mod tests {
         let (b, score) = engine.search(&board, 3);
 
         // The engine notices this is checkmate.
-        assert_eq!(score, Score::PlusInfinity);
+        assert_eq!(score, Score::WinIn(1));
 
         assert!(b.is_some());
         assert_eq!(
@@ -458,7 +460,7 @@ mod tests {
         let (b, score) = engine.search(&board, 4);
 
         // The engine notices this is checkmate.
-        assert_eq!(score, Score::PlusInfinity);
+        assert_eq!(score, Score::WinIn(2));
 
         // It got the right move.
         assert!(b.is_some());
@@ -591,6 +593,24 @@ mod tests {
     }
 
     #[test]
+    fn test_puzzle_4() {
+        // Mate in 3: why doesn't my engine see it?
+        let board =
+            Board::try_parse_fen("5R2/p2k1p1P/1P1P1PPr/bPpKBN1p/1pR3n1/7B/2P2N1P/1b6 w - - 0 1")
+                .unwrap();
+
+        let mut engine = Engine::default();
+
+        let (b, score) = engine.search(&board, 8);
+        assert!(b.is_some());
+        let b = b.unwrap();
+
+        println!("{}", score);
+
+        assert_eq!(b.as_move_string(&board), Some(String::from("Nxh6")));
+    }
+
+    #[test]
     fn test_opening_book() {
         let opening_book_path = env::var("OPENING_BOOK");
         if opening_book_path.is_err() {
@@ -628,8 +648,8 @@ mod tests {
         let score = engine.quiescence(
             &board,
             &cancel_handle.signal(),
-            Score::MinusInfinity,
-            Score::PlusInfinity,
+            Score::LossIn(0),
+            Score::WinIn(0),
         );
         assert_eq!(score, Ok(Score::Value(0)));
 
@@ -638,8 +658,8 @@ mod tests {
         let score = engine.quiescence(
             &board,
             &cancel_handle.signal(),
-            Score::MinusInfinity,
-            Score::PlusInfinity,
+            Score::LossIn(0),
+            Score::WinIn(0),
         );
         assert_eq!(score, Ok(Score::Value(0)));
 
@@ -647,8 +667,8 @@ mod tests {
         let score = engine.quiescence(
             &board,
             &cancel_handle.signal(),
-            Score::MinusInfinity,
-            Score::PlusInfinity,
+            Score::LossIn(0),
+            Score::WinIn(0),
         );
         assert_eq!(score, Ok(Score::Value(500)));
 
@@ -656,8 +676,8 @@ mod tests {
         let score = engine.quiescence(
             &board,
             &cancel_handle.signal(),
-            Score::MinusInfinity,
-            Score::PlusInfinity,
+            Score::LossIn(0),
+            Score::WinIn(0),
         );
         assert_eq!(score, Ok(Score::Value(-190)));
 
@@ -665,8 +685,8 @@ mod tests {
         let score = engine.quiescence(
             &board,
             &cancel_handle.signal(),
-            Score::MinusInfinity,
-            Score::PlusInfinity,
+            Score::LossIn(0),
+            Score::WinIn(0),
         );
         assert_eq!(score, Ok(Score::Value(1090)));
 
@@ -674,8 +694,8 @@ mod tests {
         let score = engine.quiescence(
             &board,
             &cancel_handle.signal(),
-            Score::MinusInfinity,
-            Score::PlusInfinity,
+            Score::LossIn(0),
+            Score::WinIn(0),
         );
         assert_eq!(score, Ok(Score::Value(590)));
     }
