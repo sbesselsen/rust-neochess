@@ -259,7 +259,7 @@ impl Engine {
             let null_move_score = -null_move_score;
             if null_move_score >= beta {
                 // Null move pruning with verification
-                return self.search_inner(
+                let (verification_move, verification_score) = self.search_inner(
                     board,
                     ply,
                     depth - null_move_depth_reduction - 1,
@@ -267,7 +267,10 @@ impl Engine {
                     false,
                     alpha,
                     beta,
-                );
+                )?;
+                if verification_score >= beta {
+                    return Ok((verification_move, verification_score));
+                }
             }
         }
 
