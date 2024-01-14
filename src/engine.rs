@@ -324,7 +324,10 @@ impl Engine {
             }
         }
 
-        // TODO: if our score in mate in X, add 1 to that
+        // If our score in mate in X, add 1 to that
+        if let Score::WinIn(n) = best_score {
+            best_score = Score::WinIn(n + 1);
+        }
 
         let best_move = best_board.and_then(|b| b.as_board_move(board));
 
