@@ -262,7 +262,7 @@ impl Engine {
                 let (verification_move, verification_score) = self.search_inner(
                     board,
                     ply,
-                    depth - null_move_depth_reduction - 1,
+                    depth - null_move_depth_reduction,
                     cancel_signal,
                     false,
                     alpha,
