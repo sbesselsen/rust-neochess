@@ -253,9 +253,16 @@ impl Engine {
                 -alpha,
             )?;
             let null_move_score = -null_move_score;
-            if null_move_score >= beta && null_move_score.is_finite() {
-                // Null move pruning
-                return Ok((None, beta));
+            if null_move_score >= beta {
+                // Null move pruning with verification
+                return self.search_inner(
+                    board,
+                    depth - null_move_depth_reduction - 1,
+                    cancel_signal,
+                    false,
+                    alpha,
+                    beta,
+                );
             }
         }
 
