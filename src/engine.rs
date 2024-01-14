@@ -558,7 +558,7 @@ mod tests {
         assert_eq!(b.as_move_string(&board), Some(String::from("Qxa4")));
 
         let board = b.apply_mutation(|b| {
-            b.knights[COLOR_WHITE].move_bit(21, 31);
+            b.knights[COLOR_WHITE].move_bit(42, 32);
             b.queens[COLOR_BLACK] = 0;
         });
 
