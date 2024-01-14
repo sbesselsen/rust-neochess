@@ -164,6 +164,7 @@ impl Engine {
 
         let (mv, score) = self.search_inner(
             board,
+            0,
             depth,
             cancel_signal,
             false,
@@ -185,9 +186,11 @@ impl Engine {
         self.stats
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn search_inner(
         &mut self,
         board: &Board,
+        ply: u32,
         depth: u32,
         cancel_signal: &CancelSignal,
         allow_null: bool,
@@ -242,10 +245,11 @@ impl Engine {
 
         // Null move pruning
         let null_move_depth_reduction = 2;
-        if allow_null && depth > null_move_depth_reduction + 1 && !board.is_check() {
+        if allow_null && ply > 0 && depth > null_move_depth_reduction + 1 && !board.is_check() {
             let null_move_board = board.apply_mutation(|_| {});
             let (_, null_move_score) = self.search_inner(
                 &null_move_board,
+                ply + 1,
                 depth - null_move_depth_reduction - 1,
                 cancel_signal,
                 false,
@@ -257,6 +261,7 @@ impl Engine {
                 // Null move pruning with verification
                 return self.search_inner(
                     board,
+                    ply,
                     depth - null_move_depth_reduction - 1,
                     cancel_signal,
                     false,
@@ -296,11 +301,12 @@ impl Engine {
         for (index, b) in next_boards.into_iter().enumerate() {
             let is_first = index == 0;
             let (_, score) = if is_first {
-                self.search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)?
+                self.search_inner(&b, ply + 1, depth - 1, cancel_signal, true, -beta, -alpha)?
             } else {
                 // Search with null window
                 let (mv, score) = self.search_inner(
                     &b,
+                    ply + 1,
                     depth - 1,
                     cancel_signal,
                     true,
@@ -310,7 +316,7 @@ impl Engine {
                 if alpha < -score && -score < beta {
                     // Fail high
                     // Re-search
-                    self.search_inner(&b, depth - 1, cancel_signal, true, -beta, -alpha)?
+                    self.search_inner(&b, ply + 1, depth - 1, cancel_signal, true, -beta, -alpha)?
                 } else {
                     (mv, score)
                 }
