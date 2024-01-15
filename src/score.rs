@@ -12,13 +12,6 @@ impl Score {
         matches!(self, Score::Value(_))
     }
 
-    pub fn add_value(self, value: i32) -> Score {
-        match self {
-            Score::Value(v) => Score::Value(v + value),
-            _ => self,
-        }
-    }
-
     pub fn reverse_side(self) -> Score {
         match self {
             Score::LossIn(n) => Score::WinIn(n + 1),

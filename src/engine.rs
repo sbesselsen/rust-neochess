@@ -307,14 +307,26 @@ impl Engine {
                 self.search_inner(&b, ply + 1, depth - 1, cancel_signal, true, -beta, -alpha)?
             } else {
                 // Search with null window
+                let null_window_beta = -alpha;
+                let null_window_alpha = match null_window_beta {
+                    Score::Value(v) => Score::Value(v - 1),
+                    Score::WinIn(n) => Score::WinIn(n + 1),
+                    Score::LossIn(n) => {
+                        // LossIn(0) implies that alpha is a win in zero,
+                        // but beta is somehow still better than *that*? Shenanigans!
+                        debug_assert!(n > 0);
+                        Score::LossIn(n - 1)
+                    }
+                };
+                debug_assert!(null_window_alpha < null_window_beta);
                 let (mv, rev_score) = self.search_inner(
                     &b,
                     ply + 1,
                     depth - 1,
                     cancel_signal,
                     true,
-                    (-alpha).add_value(-1),
-                    -alpha,
+                    null_window_alpha,
+                    null_window_beta,
                 )?;
                 let score = rev_score.reverse_side();
                 if alpha < score && score < beta {
