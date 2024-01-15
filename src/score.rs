@@ -18,6 +18,13 @@ impl Score {
             _ => self,
         }
     }
+
+    pub fn reverse_side(self) -> Score {
+        match self {
+            Score::LossIn(n) => Score::WinIn(n + 1),
+            _ => -self,
+        }
+    }
 }
 
 impl Neg for Score {
@@ -103,6 +110,13 @@ mod tests {
         assert_eq!(-Score::WinIn(5), Score::LossIn(5));
         assert_eq!(-Score::LossIn(0), Score::WinIn(0));
         assert_eq!(-Score::Value(100), Score::Value(-100));
+    }
+
+    #[test]
+    fn score_reverse() {
+        assert_eq!(Score::WinIn(5).reverse_side(), Score::LossIn(5));
+        assert_eq!(Score::LossIn(0).reverse_side(), Score::WinIn(1));
+        assert_eq!(Score::Value(100).reverse_side(), Score::Value(-100));
     }
 
     #[test]

@@ -303,11 +303,11 @@ impl Engine {
 
         for (index, b) in next_boards.into_iter().enumerate() {
             let is_first = index == 0;
-            let (_, score) = if is_first {
+            let (_, rev_score) = if is_first {
                 self.search_inner(&b, ply + 1, depth - 1, cancel_signal, true, -beta, -alpha)?
             } else {
                 // Search with null window
-                let (mv, score) = self.search_inner(
+                let (mv, rev_score) = self.search_inner(
                     &b,
                     ply + 1,
                     depth - 1,
@@ -316,15 +316,16 @@ impl Engine {
                     (-alpha).add_value(-1),
                     -alpha,
                 )?;
-                if alpha < -score && -score < beta {
+                let score = rev_score.reverse_side();
+                if alpha < score && score < beta {
                     // Fail high
                     // Re-search
                     self.search_inner(&b, ply + 1, depth - 1, cancel_signal, true, -beta, -alpha)?
                 } else {
-                    (mv, score)
+                    (mv, rev_score)
                 }
             };
-            let score = -score;
+            let score = rev_score.reverse_side();
             if score > best_score || best_board.is_none() {
                 best_board = Some(b);
                 best_score = score;
@@ -338,11 +339,6 @@ impl Engine {
                 // Instead, it is a lower bound on what the real value will be.
                 break;
             }
-        }
-
-        // If our score in mate in X, add 1 to that
-        if let Score::WinIn(n) = best_score {
-            best_score = Score::WinIn(n + 1);
         }
 
         let best_move = best_board.and_then(|b| b.as_board_move(board));
@@ -411,7 +407,9 @@ impl Engine {
         next_boards.sort_by_cached_key(|b| self.evaluator.evaluate_move_by_board(board, b));
 
         for b in next_boards {
-            let score = -self.quiescence(&b, cancel_signal, -beta, -alpha)?;
+            let score = self
+                .quiescence(&b, cancel_signal, -beta, -alpha)?
+                .reverse_side();
             alpha = alpha.max(score);
             if alpha >= beta {
                 break;
