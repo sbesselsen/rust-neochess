@@ -168,6 +168,19 @@ impl Board {
             }
         }
 
+        // Account for captured material
+        let opponent_color = prev_board.active_color.opponent();
+        let captures_mask = prev_board.occupancy_bits_for(opponent_color)
+            & !self.occupancy_bits_for(opponent_color);
+        if captures_mask > 0 {
+            for index in captures_mask.as_bit_index_iter() {
+                let (piece, color) = prev_board
+                    .piece_at_index(index)
+                    .expect("piece must be at index");
+                self.zobrist_hash ^= zobrist_piece(piece, color, index as usize);
+            }
+        }
+
         if let Some(en_passant_index) = prev_board.en_passant_square {
             self.zobrist_hash ^= zobrist_en_passant(en_passant_index as usize);
         }
@@ -1652,6 +1665,8 @@ impl Display for Board {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use crate::{
         bitwise_helper::BitwiseHelper,
         board::{
@@ -2219,6 +2234,29 @@ mod tests {
             Board::try_parse_fen("rnbq1bnr/ppp1pkpp/8/3pPp2/8/8/PPPPKPPP/RNBQ1BNR w - - 2 4")
                 .unwrap();
         assert_eq!(board.zobrist_hash, 0x00fdd303c946bdd9);
+    }
+
+    #[test]
+    fn zobrist_incremental_update() {
+        let board = Board::new_setup();
+        let board2 = Board::try_parse_fen(
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0",
+        )
+        .unwrap();
+
+        let mut boards = VecDeque::new();
+        boards.push_back(board);
+        boards.push_back(board2);
+
+        for _ in 0..100_000 {
+            let board = boards.pop_back().unwrap();
+            for mut b in board.next_boards() {
+                let incremental_hash = b.zobrist_hash;
+                b.compute_hash();
+                assert_eq!(b.zobrist_hash, incremental_hash);
+                boards.push_back(b);
+            }
+        }
     }
 
     #[test]
