@@ -184,9 +184,9 @@ impl Engine {
 
         // Normalize score so it always returns score for white (as is the norm).
         let score = if board.active_color == COLOR_WHITE {
-                score
-            } else {
-                -score
+            score
+        } else {
+            -score
         };
 
         Ok((mv.and_then(|mv| board.apply_board_move(&mv).ok()), score))
@@ -318,7 +318,15 @@ impl Engine {
         for (index, b) in next_boards.into_iter().enumerate() {
             let is_first = index == 0;
             let (_, rev_score) = if is_first {
-                self.search_inner(&b, ply + 1, depth - 1, cancel_signal, true, -beta, -alpha)?
+                self.search_inner(
+                    &b,
+                    ply + 1,
+                    depth - 1,
+                    cancel_signal,
+                    allow_null,
+                    -beta,
+                    -alpha,
+                )?
             } else {
                 // Search with null window
                 let null_window_beta = -alpha;
@@ -338,7 +346,7 @@ impl Engine {
                     ply + 1,
                     depth - 1,
                     cancel_signal,
-                    true,
+                    allow_null,
                     null_window_alpha,
                     null_window_beta,
                 )?;
@@ -346,7 +354,15 @@ impl Engine {
                 if alpha < score && score < beta {
                     // Fail high
                     // Re-search
-                    self.search_inner(&b, ply + 1, depth - 1, cancel_signal, true, -beta, -alpha)?
+                    self.search_inner(
+                        &b,
+                        ply + 1,
+                        depth - 1,
+                        cancel_signal,
+                        allow_null,
+                        -beta,
+                        -alpha,
+                    )?
                 } else {
                     (mv, rev_score)
                 }
@@ -642,13 +658,14 @@ mod tests {
 
         let mut engine = Engine::default();
 
-        let (b, score) = engine.search(&board, 8);
+        let (b, score) = engine.search(&board, 6);
         assert!(b.is_some());
         let b = b.unwrap();
 
         println!("{}", score);
 
         assert_eq!(b.as_move_string(&board), Some(String::from("Nxh6")));
+        assert_eq!(score, Score::WinIn(3));
     }
 
     #[test]
