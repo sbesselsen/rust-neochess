@@ -333,6 +333,7 @@ impl Engine {
 
         for (index, b) in next_boards.into_iter().enumerate() {
             let is_first = index == 0;
+
             let (_, rev_score) = if is_first {
                 self.search_inner(
                     &b,
@@ -344,6 +345,9 @@ impl Engine {
                     -alpha,
                 )?
             } else {
+                // Late move reduction.
+                let depth_reduction = if index > 10 && depth >= 4 { 2 } else { 1 };
+
                 // Search with null window
                 let null_window_beta = -alpha;
                 let null_window_alpha = match null_window_beta {
@@ -360,7 +364,7 @@ impl Engine {
                 let (mv, rev_score) = self.search_inner(
                     &b,
                     ply + 1,
-                    depth - 1,
+                    depth - depth_reduction,
                     cancel_signal,
                     allow_null,
                     null_window_alpha,
@@ -368,7 +372,6 @@ impl Engine {
                 )?;
                 let score = -rev_score;
                 if alpha < score && score < beta {
-                    // Fail high
                     // Re-search
                     self.search_inner(
                         &b,
