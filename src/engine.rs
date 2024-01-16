@@ -346,7 +346,11 @@ impl Engine {
                 )?
             } else {
                 // Late move reduction.
-                let depth_reduction = if index > 10 && depth >= 4 { 2 } else { 1 };
+                let depth_reduction = if index > 10 && depth >= 3 && !b.is_check() {
+                    2
+                } else {
+                    1
+                };
 
                 // Search with null window
                 let null_window_beta = -alpha;
