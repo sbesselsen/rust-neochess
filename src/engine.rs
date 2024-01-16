@@ -223,6 +223,22 @@ impl Engine {
         let mut alpha = alpha;
         let mut beta = beta;
 
+        // Mate distance pruning.
+        if beta > Score::WinIn(ply) {
+            beta = Score::WinIn(ply);
+            if alpha >= beta {
+                // The other side has a way to force a mate that is farther away. Prune.
+                return Ok((None, beta));
+            }
+        }
+        if alpha < Score::LossIn(ply) {
+            alpha = Score::LossIn(ply);
+            if alpha >= beta {
+                // The other side has a better mate available than whatever we are searching now. Prune.
+                return Ok((None, alpha));
+            }
+        }
+
         let tt_index = (board.zobrist_hash >> (64 - self.transposition_table_index_bits)) as usize;
         let tt_entry =
             self.transposition_table[tt_index].filter(|e| e.zobrist_hash == board.zobrist_hash);
@@ -661,8 +677,6 @@ mod tests {
         let (b, score) = engine.search(&board, 6);
         assert!(b.is_some());
         let b = b.unwrap();
-
-        println!("{}", score);
 
         assert_eq!(b.as_move_string(&board), Some(String::from("Nxh6")));
         assert_eq!(score, Score::WinIn(3));
