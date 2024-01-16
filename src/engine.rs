@@ -73,6 +73,7 @@ pub struct Engine {
     transposition_table: Vec<Option<TranspositionTableEntry>>,
     transposition_table_index_bits: u8,
     stats: EngineStats,
+    state_is_dirty: bool,
 }
 
 impl Debug for Engine {
@@ -115,6 +116,7 @@ impl From<EngineBuilder> for Engine {
             opening_book,
             transposition_table,
             transposition_table_index_bits,
+            state_is_dirty: false,
             stats: EngineStats::default(),
         }
     }
@@ -131,10 +133,6 @@ impl Engine {
         self.stats = Default::default();
     }
 
-    pub fn reset_state(&mut self) {
-        self.transposition_table.fill(None);
-    }
-
     pub fn search(&mut self, board: &Board, depth: u32) -> (Option<Board>, Score) {
         self.cancelable_search(board, depth, &CancelHandle::new().signal())
             .expect("search should not be canceled")
@@ -148,6 +146,11 @@ impl Engine {
         cancel_signal: &CancelSignal,
     ) -> InterruptableResult<(Option<Board>, Score)> {
         assert!(depth > 0, "depth should be at least 1");
+
+        if self.state_is_dirty {
+            self.reset_state();
+        }
+        self.state_is_dirty = true;
 
         // Reset stats
         self.stats = EngineStats::default();
@@ -172,18 +175,29 @@ impl Engine {
             Score::WinIn(0),
         )?;
 
-        Ok((
-            mv.and_then(|mv| board.apply_board_move(&mv).ok()),
-            if board.active_color == COLOR_WHITE {
+        // Mating score is in ply; convert to moves
+        let score = match score {
+            Score::LossIn(n) => Score::LossIn(n / 2),
+            Score::WinIn(n) => Score::WinIn((n + 1) / 2),
+            s => s,
+        };
+
+        // Normalize score so it always returns score for white (as is the norm).
+        let score = if board.active_color == COLOR_WHITE {
                 score
             } else {
                 -score
-            },
-        ))
+        };
+
+        Ok((mv.and_then(|mv| board.apply_board_move(&mv).ok()), score))
     }
 
     pub fn stats(&self) -> EngineStats {
         self.stats
+    }
+
+    fn reset_state(&mut self) {
+        self.transposition_table.fill(None);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -291,7 +305,7 @@ impl Engine {
 
         if next_boards.is_empty() {
             let score = if board.is_check() {
-                Score::LossIn(0)
+                Score::LossIn(ply)
             } else {
                 Score::Value(0)
             };
@@ -328,7 +342,7 @@ impl Engine {
                     null_window_alpha,
                     null_window_beta,
                 )?;
-                let score = rev_score.reverse_side();
+                let score = -rev_score;
                 if alpha < score && score < beta {
                     // Fail high
                     // Re-search
@@ -337,7 +351,7 @@ impl Engine {
                     (mv, rev_score)
                 }
             };
-            let score = rev_score.reverse_side();
+            let score = -rev_score;
             if score > best_score || best_board.is_none() {
                 best_board = Some(b);
                 best_score = score;
@@ -419,9 +433,7 @@ impl Engine {
         next_boards.sort_by_cached_key(|b| self.evaluator.evaluate_move_by_board(board, b));
 
         for b in next_boards {
-            let score = self
-                .quiescence(&b, cancel_signal, -beta, -alpha)?
-                .reverse_side();
+            let score = -self.quiescence(&b, cancel_signal, -beta, -alpha)?;
             alpha = alpha.max(score);
             if alpha >= beta {
                 break;
