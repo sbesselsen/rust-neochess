@@ -47,8 +47,8 @@ pub struct Board {
     pub can_castle: [[bool; 2]; 2],
     pub active_color: usize,
     pub en_passant_square: Option<u32>,
-    pub halfmove_clock: u16,
-    pub fullmove_number: u16,
+    pub halfmove_clock: u8,
+    pub fullmove_number: u32,
     pub zobrist_hash: u64,
 }
 
@@ -877,7 +877,7 @@ impl Board {
             {
                 b.halfmove_clock = 0;
             } else {
-                b.halfmove_clock += 1;
+                b.halfmove_clock = b.halfmove_clock.saturating_add(1);
             }
 
             // Update castling based on whether the rook or king moved
