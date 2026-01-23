@@ -15,6 +15,7 @@ use crate::{
         errors::{BoardMoveError, FenParseError},
         piece::Piece,
     },
+    magic,
     zobrist::{
         zobrist_castling, zobrist_color, zobrist_color_swap, zobrist_en_passant, zobrist_piece,
     },
@@ -1107,51 +1108,16 @@ impl Board {
     }
 
     fn rooklike_moves_masks(&self, mask: u64) -> impl Iterator<Item = (u32, u64)> {
-        let opponent_color = self.active_color.opponent();
-        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let self_occupancy = self.occupancy_bits_for(self.active_color);
-        let occupancy = self_occupancy | opponent_occupancy;
+        // Occupancy is already in standard bit ordering (bit 0 = a1, etc.)
+        let occupancy = self.occupancy_bits();
 
-        mask.as_bit_index_iter().map(move |index| {
-            let (rank, _) = Self::rank_file_from_index(index);
-
-            let rank_mask = RANK_0_MASK << (8 * (rank - 1));
-
-            let mut up_mask = FILE_0_MASK.discarding_shl(64 - index);
-            let up_mask_occupied = up_mask & occupancy;
-            if up_mask_occupied > 0 {
-                // If there are other pieces inside the mask of up-moves:
-                // Check where the last occupied index is and move up until (and including) there.
-                // That will include a capture of the piece on that square.
-                // Then mask with !self_occupancy so we don't capture our own pieces.
-                // The same method works for down_mask, left_mask and right_mask, although
-                // reversed for down_mask and right_mask.
-                up_mask &= ALL_MASK.discarding_shr(63 - up_mask_occupied.trailing_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut down_mask = FILE_0_MASK.discarding_shr(index + 8);
-            let down_mask_occupied = down_mask & occupancy;
-            if down_mask_occupied > 0 {
-                down_mask &= ALL_MASK.discarding_shl(63 - down_mask_occupied.leading_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut left_mask = RANK_0_MASK.discarding_shift_lr((index as i32) - 64) & rank_mask;
-            let left_mask_occupied = left_mask & occupancy;
-            if left_mask_occupied > 0 {
-                left_mask &= ALL_MASK.discarding_shr(63 - left_mask_occupied.trailing_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut right_mask = RANK_0_MASK.discarding_shift_lr((index as i32) - 55) & rank_mask;
-            let right_mask_occupied = right_mask & occupancy;
-            if right_mask_occupied > 0 {
-                right_mask &= ALL_MASK.discarding_shl(63 - right_mask_occupied.leading_zeros())
-                    & !self_occupancy;
-            }
-
-            (index, up_mask | down_mask | left_mask | right_mask)
+        mask.as_bit_index_iter().map(move |board_index| {
+            // Convert board index to standard square (board_index 0 = bit 63, board_index 63 = bit 0)
+            let std_sq = 63 - board_index;
+            // Get attacks in standard ordering, filter out own pieces
+            let attacks = magic::get_rook_attacks(std_sq, occupancy) & !self_occupancy;
+            (board_index, attacks)
         })
     }
 
@@ -1179,54 +1145,16 @@ impl Board {
     }
 
     fn bishoplike_moves_masks(&self, mask: u64) -> impl Iterator<Item = (u32, u64)> {
-        let opponent_color = self.active_color.opponent();
-        let opponent_occupancy = self.occupancy_bits_for(opponent_color);
         let self_occupancy = self.occupancy_bits_for(self.active_color);
-        let occupancy = self_occupancy | opponent_occupancy;
+        // Occupancy is already in standard bit ordering (bit 0 = a1, etc.)
+        let occupancy = self.occupancy_bits();
 
-        mask.as_bit_index_iter().map(move |index| {
-            let (_, file) = Self::rank_file_from_index(index);
-
-            let mut up_left_mask = DIAG_TL_MASK.discarding_shl(72 - index)
-                & (ALL_MASK >> index.saturating_sub(9 * (file - 1)));
-            let up_left_mask_occupied = up_left_mask & occupancy;
-            if up_left_mask_occupied > 0 {
-                up_left_mask &= ALL_MASK
-                    .discarding_shr(63 - up_left_mask_occupied.trailing_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut up_right_mask = DIAG_TR_MASK.discarding_shl(63 - index)
-                & (ALL_MASK >> index.saturating_sub(7 * (8 - file)));
-            let up_right_mask_occupied = up_right_mask & occupancy;
-            if up_right_mask_occupied > 0 {
-                up_right_mask &= ALL_MASK
-                    .discarding_shr(63 - up_right_mask_occupied.trailing_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut down_left_mask = DIAG_TR_MASK.discarding_shr(index)
-                & (ALL_MASK << 63u32.saturating_sub(index + 7 * (file - 1)));
-            let down_left_mask_occupied = down_left_mask & occupancy;
-            if down_left_mask_occupied > 0 {
-                down_left_mask &= ALL_MASK
-                    .discarding_shl(63 - down_left_mask_occupied.leading_zeros())
-                    & !self_occupancy;
-            }
-
-            let mut down_right_mask = DIAG_TL_MASK.discarding_shr(index + 9)
-                & (ALL_MASK << 63u32.saturating_sub(index + 9 * (8 - file)));
-            let down_right_mask_occupied = down_right_mask & occupancy;
-            if down_right_mask_occupied > 0 {
-                down_right_mask &= ALL_MASK
-                    .discarding_shl(63 - down_right_mask_occupied.leading_zeros())
-                    & !self_occupancy;
-            }
-
-            (
-                index,
-                up_left_mask | up_right_mask | down_left_mask | down_right_mask,
-            )
+        mask.as_bit_index_iter().map(move |board_index| {
+            // Convert board index to standard square (board_index 0 = bit 63, board_index 63 = bit 0)
+            let std_sq = 63 - board_index;
+            // Get attacks in standard ordering, filter out own pieces
+            let attacks = magic::get_bishop_attacks(std_sq, occupancy) & !self_occupancy;
+            (board_index, attacks)
         })
     }
 
